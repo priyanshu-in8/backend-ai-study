@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "validate": "node validate-env.js",
+    "pre-deploy": "npm run validate && npm run test",
     "create-dev-user": "node create-dev-user.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
