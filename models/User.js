@@ -1,0 +1,359 @@
+import mongoose from "mongoose";
+import bcryptjs from "bcryptjs";
+
+/* ================= CURRENT PROBLEM SCHEMA ================= */
+
+const currentProblemSchema =
+new mongoose.Schema({
+
+  problem: String,
+
+  description: String,
+
+  difficulty: String,
+
+  topic: String,
+
+  language: String,
+
+  starterCode: String,
+
+  solutionCode: String,
+
+  examples: [
+    {
+      input: String,
+      output: String
+    }
+  ],
+
+  testCases: [
+    {
+      input: String,
+
+      expectedOutput: String,
+
+      isHidden: Boolean
+    }
+  ],
+
+  constraints: [
+    String
+  ],
+
+  solutionApproach: String
+
+}, {
+  _id: false
+});
+
+/* ================= STUDY PLAN SCHEMA ================= */
+
+const studyPlanSchema =
+new mongoose.Schema({
+
+  title: String,
+
+  goal: String,
+
+  days: [
+    {
+      day: Number,
+
+      focus: String,
+
+      tasks: [String],
+
+      completed: {
+        type: Boolean,
+        default: false
+      }
+    }
+  ],
+
+  current: [
+    currentProblemSchema
+  ],
+
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+
+}, {
+  _id: false
+});
+
+/* ================= USER SCHEMA ================= */
+
+const userSchema =
+new mongoose.Schema(
+{
+  // Basic Info
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+
+  password: {
+    type: String,
+    required: true,
+    minlength: 6,
+    select: false
+  },
+
+  role: {
+    type: String,
+    enum: [
+      "student",
+      "teacher",
+      "admin"
+    ],
+    default: "student"
+  },
+
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+
+  verificationToken: {
+    type: String,
+    select: false
+  },
+
+  verificationTokenExpires: {
+    type: Date,
+    select: false
+  },
+
+  // Education
+  educationType: {
+    type: String,
+    enum: [
+      "school",
+      "college"
+    ],
+    required: true
+  },
+
+  educationLevel: {
+    type: String,
+    required: true
+  },
+
+  subjects: [String],
+
+  // AI Chat History
+  chatHistory: [
+    {
+      userMessage: String,
+
+      aiReply: String,
+
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
+
+  // Weak Topics
+  weakTopics: [
+    {
+      topic: String,
+
+      wrongCount: {
+        type: Number,
+        default: 1
+      },
+
+      lastWrongAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
+
+  // Study Plans
+  studyPlans: [
+    studyPlanSchema
+  ],
+
+  // Daily Missions
+  dailyMissions: [
+    {
+      title: String,
+
+      xp: Number,
+
+      completed: {
+        type: Boolean,
+        default: false
+      }
+    }
+  ],
+
+  lastMissionDate: Date,
+
+  // Achievements
+  achievements: [
+    {
+      key: String,
+
+      title: String,
+
+      icon: String,
+
+      unlockedAt: Date
+    }
+  ],
+
+  // Practice History
+  practiceHistory: [
+    {
+      sessionType: {
+        type: String,
+        enum: [
+          "quiz",
+          "flashcards",
+          "coding"
+        ]
+      },
+
+      topic: String,
+
+      score: Number,
+
+      total: Number,
+
+      accuracy: Number,
+
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
+
+  // Gamification
+  xpPoints: {
+    type: Number,
+    default: 0
+  },
+
+  level: {
+    type: Number,
+    default: 1
+  },
+
+  streakDays: {
+    type: Number,
+    default: 0
+  },
+
+  currentCode: {
+    type: String,
+    default: "",
+    select: false
+  },
+
+  badges: [String],
+
+  // Productivity
+  studyHours: {
+    type: Number,
+    default: 0
+  },
+
+  completedTasks: {
+    type: Number,
+    default: 0
+  },
+
+  // Recommendation Engine
+  recommendedTopics: [
+    String
+  ],
+
+  // Last Active
+  lastLogin: {
+    type: Date,
+    default: Date.now
+  }
+
+},
+{
+  timestamps: true
+}
+);
+
+/* ================= PASSWORD HASH ================= */
+
+userSchema.pre(
+  "save",
+  async function(next){
+
+    if(
+      !this.isModified(
+        "password"
+      )
+    ){
+      return next();
+    }
+
+    const salt =
+      await bcryptjs.genSalt(10);
+
+    this.password =
+      await bcryptjs.hash(
+        this.password,
+        salt
+      );
+
+    next();
+  }
+);
+
+/* ================= MATCH PASSWORD ================= */
+
+userSchema.methods.matchPassword =
+async function(password){
+
+  return await bcryptjs.compare(
+    password,
+    this.password
+  );
+};
+
+/* ================= CLEAR TOKEN ================= */
+
+userSchema.methods
+.clearVerificationToken =
+function(){
+
+  this.verificationToken =
+    undefined;
+
+  this.verificationTokenExpires =
+    undefined;
+};
+
+/* ================= MODEL ================= */
+
+const User =
+mongoose.model(
+  "User",
+  userSchema
+);
+
+export default User;

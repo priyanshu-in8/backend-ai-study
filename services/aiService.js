@@ -1,0 +1,948 @@
+import OpenAI from "openai";
+import dotenv from "dotenv";
+import codeExecutor
+from "../utils/codeExecutor.js";
+
+
+dotenv.config();
+
+const client = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY, // ✅ FREE API
+  baseURL: "https://api.groq.com/openai/v1" // ✅ Groq endpoint
+});
+
+//
+// 🔥 CORE FUNCTION
+//
+async function generateResponse(messages) {
+  try {
+    const completion = await client.chat.completions.create({
+      model: "llama-3.1-8b-instant", // ✅ FREE + FAST model
+      messages,
+      temperature: 0.5,
+      max_tokens: 1024
+    });
+
+    return completion.choices[0]?.message?.content || "No response";
+
+  } catch (error) {
+    console.error("Groq error:", error.message);
+    throw error;
+  }
+}
+
+//
+// ✅ 1. Chat
+//
+export const generateChatResponse = async (prompt) => {
+  try {
+    return await generateResponse([
+      { role: "user", content: prompt }
+    ]);
+  } catch (error) {
+    console.error("Chat error:", error.message);
+    throw new Error("Failed to generate chat response");
+  }
+};
+
+//
+// ✅ 2. Quiz
+//
+export const generateQuiz = async (topic, numQuestions = 5) => {
+  try {
+    const prompt = `
+Generate ${numQuestions} MCQ questions on "${topic}".
+
+Return ONLY JSON:
+{
+  "topic": "${topic}",
+  "questions": [
+    {
+      "id": 1,
+      "question": "Question?",
+      "options": ["A","B","C","D"],
+      "correctAnswer": 0,
+      "explanation": "Explain"
+    }
+  ]
+}
+`;
+
+    const text = await generateResponse([
+      { role: "user", content: prompt }
+    ]);
+
+   let cleaned = text
+  .replace(/```json/g, "")
+  .replace(/```/g, "")
+  .trim();
+
+const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found");
+
+    return JSON.parse(jsonMatch[0]);
+
+  } catch (error) {
+    console.error("Quiz error:", error.message);
+    throw new Error("Failed to generate quiz");
+  }
+};
+
+//
+// ✅ 3. Summarize
+//
+export const summarizeText = async (text, style = "medium") => {
+  try {
+    let guide = "in 2-3 sentences";
+    if (style === "short") guide = "in 1-2 sentences";
+    if (style === "detailed") guide = "in detailed paragraphs";
+
+    return await generateResponse([
+      {
+        role: "user",
+        content: `Summarize this ${guide}:\n${text}`
+      }
+    ]);
+  } catch (error) {
+    console.error("Summarize error:", error.message);
+    throw new Error("Failed to summarize");
+  }
+};
+
+//
+// ✅ 4. Flashcards
+//
+export const generateFlashcards = async (topic, numCards = 10) => {
+  try {
+    const prompt = `
+Generate ${numCards} flashcards for "${topic}".
+
+Return ONLY JSON:
+{
+  "topic": "${topic}",
+  "flashcards": [
+    {
+      "id": 1,
+      "front": "Question",
+      "back": "Answer"
+    }
+  ]
+}
+`;
+
+    const text = await generateResponse([
+      { role: "user", content: prompt }
+    ]);
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON found");
+
+    return JSON.parse(jsonMatch[0]);
+
+  } catch (error) {
+    console.error("Flashcard error:", error.message);
+    throw new Error("Failed to generate flashcards");
+  }
+};
+
+//
+// ✅ 5. Coding problem generation
+//
+//
+// ==============================
+// 🔧 Helper: Extract JSON safely
+// ==============================
+function extractJSON(text) {
+
+  const match = text.match(
+    /\{[\s\S]*\}/
+  );
+
+  return match ? match[0] : null;
+}
+
+//
+// ==============================
+// 🔧 Helper: Safe JSON Parser
+// ==============================
+function safeParseJSON(text) {
+
+  try {
+
+    return JSON.parse(text);
+
+  } catch (err) {
+
+    console.log("⚠️ Raw broken JSON:\n");
+    console.log(text);
+
+    let fixed = text;
+
+    // Remove markdown
+    fixed = fixed
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .replace(/`/g, '"')
+      .replace(/\r/g, "")
+      .trim();
+
+    // Escape multiline strings
+    fixed = fixed.replace(
+      /"([^"\\]*(\\.[^"\\]*)*)"/gs,
+      (match) => {
+
+        return match
+          .replace(/\n/g, "\\n")
+          .replace(/\t/g, "\\t");
+      }
+    );
+
+    // Remove trailing commas
+    fixed = fixed
+      .replace(/,\s*}/g, "}")
+      .replace(/,\s*]/g, "]");
+
+    // Fix adjacent objects
+    fixed = fixed.replace(
+      /}\s*{/g,
+      "},{"
+    );
+
+    // Escape solutionCode
+    fixed = fixed.replace(
+      /"solutionCode"\s*:\s*"([\s\S]*?)"/g,
+      (match, p1) => {
+
+        const escaped = p1
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n")
+          .replace(/\t/g, "\\t");
+
+        return `"solutionCode":"${escaped}"`;
+      }
+    );
+
+    // Escape starterCode
+    fixed = fixed.replace(
+      /"starterCode"\s*:\s*"([\s\S]*?)"/g,
+      (match, p1) => {
+
+        const escaped = p1
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, "\\n")
+          .replace(/\t/g, "\\t");
+
+        return `"starterCode":"${escaped}"`;
+      }
+    );
+
+    console.log("✅ Fixed JSON:\n");
+    console.log(fixed);
+
+    return JSON.parse(fixed);
+
+  }
+}
+
+//
+// ==============================
+// 🔧 Helper: Clean JSON String
+// ==============================
+function cleanJSON(text) {
+
+  return text
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
+//
+// ==============================
+// 🚀 Generate Coding Problem
+// ==============================
+export const generateCodingProblem = async (
+  topic,
+  difficulty = "medium",
+  user
+) => {
+
+  try {
+
+const prompt = `
+Generate a UNIQUE ${difficulty} competitive programming problem on "${topic}".
+
+STRICT RULES:
+
+1. DO NOT USE:
+- markdown
+- backticks
+- **
+- separators
+- bullet points
+- explanations outside format
+
+2. RETURN ONLY THIS EXACT FORMAT:
+
+TITLE:
+<problem title>
+
+DESCRIPTION:
+<clear problem description>
+
+LANGUAGE:
+cpp
+
+STARTER_CODE:
+<incomplete code only>
+
+SOLUTION_CODE:
+<fully correct complete code>
+
+EXAMPLES:
+Input:
+<stdin input>
+
+Output:
+<stdout output>
+
+TEST_CASES:
+INPUT:
+<stdin input>
+
+EXPECTED:
+<correct stdout output>
+
+INPUT:
+<stdin input>
+
+EXPECTED:
+<correct stdout output>
+
+CONSTRAINTS:
+<constraint 1>
+<constraint 2>
+
+SOLUTION_APPROACH:
+<short approach>
+
+IMPORTANT RULES:
+
+- STARTER_CODE and SOLUTION_CODE sections are REQUIRED
+- Never leave any section empty
+- STARTER_CODE and SOLUTION_CODE must be DIFFERENT
+- STARTER_CODE must contain:
+  - TODO comments
+  - incomplete logic
+  - no final algorithm
+  - no final answer generation
+
+GOOD STARTER_CODE EXAMPLE:
+
+#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+
+    int n;
+    cin >> n;
+
+    vector<int> arr(n);
+
+    for(int i = 0; i < n; i++) {
+        cin >> arr[i];
+    }
+
+    // TODO: Write your logic here
+
+    return 0;
+}
+
+BAD STARTER_CODE:
+- full working solution
+- copied solution code
+- complete logic
+
+INPUT/OUTPUT RULES:
+
+- ALL INPUTS MUST BE RAW STDIN FORMAT
+- ALL OUTPUTS MUST BE RAW STDOUT FORMAT
+
+GOOD INPUT:
+5 3
+1 2 3 4 5
+
+GOOD OUTPUT:
+12
+
+BAD INPUT:
+arr = [1,2,3,4,5], k = 3
+
+BAD OUTPUT:
+The answer is 12
+
+TESTCASE RULES:
+
+- testCases MUST match the code input format exactly
+- expected outputs MUST be mathematically correct
+- every testcase MUST be executable directly from stdin
+- include edge cases
+- include at least 3 testcases
+
+SOLUTION RULES:
+
+- SOLUTION_CODE MUST compile successfully
+- SOLUTION_CODE MUST pass all testcases
+- Use stdin/stdout only
+- No hardcoded outputs
+- No fake logic
+- No placeholder logic
+
+VERY IMPORTANT:
+
+Before returning the response:
+
+1. Mentally execute the SOLUTION_CODE
+2. Verify every expectedOutput manually
+3. Ensure all testcases pass correctly
+4. Ensure STARTER_CODE != SOLUTION_CODE
+5. Ensure input format exactly matches cin statements
+6. Ensure no markdown or backticks are present anywhere
+`;
+
+    const text = await generateResponse([
+      {
+        role: "user",
+        content: prompt
+      }
+    ]);
+
+    console.log("RAW AI RESPONSE:");
+    console.log(text);
+
+    /* ================= EXTRACT SECTION ================= */
+
+    const extractSection = (
+      start,
+      end
+    ) => {
+
+      const regex = new RegExp(
+        `${start}:([\\s\\S]*?)${end ? end + ":" : "$"}`,
+        "i"
+      );
+
+      const match =
+        text.match(regex);
+
+      return match
+        ? match[1].trim()
+        : "";
+    };
+
+    /* ================= BASIC FIELDS ================= */
+
+    const title =
+      extractSection(
+        "TITLE",
+        "DESCRIPTION"
+      );
+
+    const description =
+      extractSection(
+        "DESCRIPTION",
+        "LANGUAGE"
+      );
+
+    const language =
+      extractSection(
+        "LANGUAGE",
+        "STARTER_CODE"
+      ) || "cpp";
+
+    const starterCode =
+      extractSection(
+        "STARTER_CODE",
+        "SOLUTION_CODE"
+      );
+
+    const solutionCode =
+      extractSection(
+        "SOLUTION_CODE",
+        "EXAMPLES"
+      );
+/* ================= CLEAN CODE ================= */
+
+const cleanCode = (code) => {
+
+  return code
+    .replace(/```cpp/g, "")
+    .replace(/```c/g, "")
+    .replace(/```java/g, "")
+    .replace(/```python/g, "")
+    .replace(/```javascript/g, "")
+    .replace(/```/g, "")
+    .trim();
+};
+
+const cleanedStarterCode =
+  cleanCode(starterCode);
+
+const cleanedSolutionCode =
+  cleanCode(solutionCode);
+
+  if (
+  cleanedStarterCode.trim() ===
+  cleanedSolutionCode.trim()
+) {
+
+  throw new Error(
+    "Starter code and solution code are identical"
+  );
+}
+    /* ================= CONSTRAINTS ================= */
+
+    const constraintsRaw =
+      extractSection(
+        "CONSTRAINTS",
+        "SOLUTION_APPROACH"
+      );
+
+    const constraints =
+      constraintsRaw
+        .split("\n")
+        .map(c => c.trim())
+        .filter(Boolean);
+
+    /* ================= SOLUTION APPROACH ================= */
+
+    const solutionApproach =
+      extractSection(
+        "SOLUTION_APPROACH",
+        null
+      );
+
+    /* ================= EXAMPLES ================= */
+/* ================= EXAMPLES ================= */
+
+const examplesRaw =
+  extractSection(
+    "EXAMPLES",
+    "TEST_CASES"
+  );
+
+const exampleMatches = [
+  ...examplesRaw.matchAll(
+    /Input:\s*([\s\S]*?)Output:\s*([\s\S]*?)(?=Input:|$)/gi
+  )
+];
+
+const examples =
+  exampleMatches.map(m => ({
+
+    input:
+      m[1]
+        .replace(/```/g, "")
+        .trim(),
+
+    output:
+      m[2]
+        .replace(/```/g, "")
+        .trim()
+  }));
+
+    /* ================= TEST CASES ================= */
+
+/* ================= TEST CASES ================= */
+
+const testCasesRaw =
+  extractSection(
+    "TEST_CASES",
+    "CONSTRAINTS"
+  );
+
+const testCaseMatches = [
+  ...testCasesRaw.matchAll(
+    /INPUT:\s*([\s\S]*?)EXPECTED:\s*([\s\S]*?)(?=INPUT:|$)/gi
+  )
+];
+
+const testCases =
+  testCaseMatches.map(m => ({
+
+    // stdin format
+    input:
+      m[1]
+        .replace(/```/g, "")
+        .trim(),
+
+    // stdout format
+    expectedOutput:
+      m[2]
+        .replace(/```/g, "")
+        .trim(),
+
+    isHidden: false
+  }));
+
+  /* ================= VALIDATE TESTCASES ================= */
+
+/* ================= VALIDATE TESTCASES ================= */
+
+for (const tc of testCases) {
+
+  try {
+
+    const result =
+      await codeExecutor.execute(
+
+        cleanedSolutionCode,
+
+        language,
+
+        tc.input
+      );
+
+    // Only overwrite if execution successful
+    if (
+      result.status === "success" &&
+      result.stdout
+    ) {
+
+      tc.expectedOutput =
+        result.stdout.trim();
+    }
+
+    else {
+
+      console.log(
+        "❌ Execution failed"
+      );
+
+      console.log(
+        result.stderr
+      );
+    }
+
+  } catch (err) {
+
+    console.log(
+      "❌ Testcase validation failed"
+    );
+
+    console.log(err.message);
+  }
+}
+
+    /* ================= FINAL OBJECT ================= */
+
+    const generatedProblem = {
+
+  problem:
+    title || "Generated Problem",
+
+  description,
+
+  difficulty,
+
+  topic,
+
+  language,
+
+ starterCode:
+  cleanedStarterCode,
+
+solutionCode:
+  cleanedSolutionCode,
+
+  examples,
+
+  testCases,
+
+  constraints,
+
+  solutionApproach
+};
+
+    /* ================= SAVE TO USER ================= */
+
+/* ================= SAVE TO USER ================= */
+
+if (user) {
+
+  // Create study plan if not exists
+  if (
+    !user.studyPlans ||
+    user.studyPlans.length === 0
+  ) {
+
+    user.studyPlans.push({
+
+      title:
+        "Coding Practice",
+
+      goal:
+        "Daily Coding",
+
+      days: [],
+
+      current: []
+    });
+  }
+
+  // Latest study plan
+  const latestPlan =
+    user.studyPlans[
+      user.studyPlans.length - 1
+    ];
+
+  // SAVE COMPLETE OBJECT
+  latestPlan.current = [
+    generatedProblem
+  ];
+
+  // Important
+  user.markModified(
+    "studyPlans"
+  );
+
+  // Save user
+  await user.save();
+
+  console.log(
+    "✅ Full problem saved"
+  );
+}
+
+    /* ================= RETURN ================= */
+
+    return {
+
+      topic,
+
+      difficulty,
+
+      title:
+        title || "Generated Problem",
+
+      description,
+
+      language,
+
+    starterCode:
+  cleanedStarterCode,
+
+solutionCode:
+  cleanedSolutionCode,
+
+      examples,
+
+      testCases,
+
+      constraints,
+
+      solutionApproach
+    };
+
+  } catch (error) {
+
+    console.error(
+      "Coding problem error:",
+      error.message
+    );
+
+    throw new Error(
+      "Failed to generate coding problem"
+    );
+  }
+};
+
+// ==============================
+// 🚀 MAIN FUNCTION
+// ==============================
+export const evaluateCodingSolution = async (
+  problemText,
+  solutionCode,
+  testCases = []
+) => {
+  try {
+const prompt = `
+Generate a ${difficulty} competitive programming problem on "${topic}".
+
+STRICT RULES:
+- NO JSON
+- NO markdown
+- NO backticks
+- stdin/stdout format only
+- STARTER_CODE and SOLUTION_CODE must be DIFFERENT
+- STARTER_CODE must NOT contain final logic
+- STARTER_CODE must contain TODO comment
+- SOLUTION_CODE must contain complete correct solution
+
+RETURN FORMAT EXACTLY:
+
+TITLE:
+...
+
+DESCRIPTION:
+...
+
+LANGUAGE:
+cpp
+
+STARTER_CODE:
+#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+
+    // TODO: Write your solution here
+
+    return 0;
+}
+
+SOLUTION_CODE:
+<full working solution>
+
+EXAMPLES:
+Input:
+...
+Output:
+...
+
+TEST_CASES:
+INPUT:
+...
+EXPECTED:
+...
+
+INPUT:
+...
+EXPECTED:
+...
+
+CONSTRAINTS:
+...
+
+SOLUTION_APPROACH:
+...
+`;
+
+    const aiResponse = await generateResponse([
+      { role: "user", content: prompt },
+    ]);
+
+    console.log("AI RAW:", aiResponse);
+
+    const raw = extractJSON(aiResponse);
+    if (!raw) throw new Error("No JSON found");
+
+    const parsed = JSON.parse(cleanJSON(raw));
+
+    // ✅ SAFETY FIXES (VERY IMPORTANT)
+    return {
+      isCorrect: parsed.isCorrect ?? false,
+      score: parsed.score ?? 0,
+      passed: parsed.passed ?? 0,
+      total: parsed.total ?? testCases.length,
+      issues: parsed.issues ?? [],
+      suggestions: parsed.suggestions ?? [],
+      summary: parsed.summary ?? "No summary",
+    };
+
+  } catch (error) {
+    console.error("❌ Coding evaluation error:", error.message);
+
+    return {
+      isCorrect: false,
+      score: 0,
+      passed: 0,
+      total: testCases.length || 0,
+      issues: ["Evaluation failed"],
+      suggestions: ["Try again"],
+      summary: "Could not evaluate solution",
+    };
+  }
+};
+//
+// ✅ 7. Explain
+//
+export const explainConcept = async (concept, level = "intermediate") => {
+  try {
+    return await generateResponse([
+      {
+        role: "user",
+        content: `Explain "${concept}" for ${level} level with examples`
+      }
+    ]);
+  } catch (error) {
+    console.error("Explain error:", error.message);
+    throw new Error("Failed to explain concept");
+  }
+};
+
+//
+// ✅ 6. Notes
+//
+export const generateStudyNotes = async (topic) => {
+  try {
+    return await generateResponse([
+      {
+        role: "user",
+        content: `Create structured study notes for "${topic}"`
+      }
+    ]);
+  } catch (error) {
+    console.error("Notes error:", error.message);
+    throw new Error("Failed to generate notes");
+  }
+};
+//
+// ✅ 8. AI Study Plan
+//
+export const generateAIStudyPlan = async (
+  goal,
+  days = 7,
+  hoursPerDay = 2,
+  level = "beginner"
+) => {
+  try {
+    const prompt = `
+Create a ${days}-day study plan.
+
+Goal: ${goal}
+Level: ${level}
+Daily Study Time: ${hoursPerDay} hours
+
+Return ONLY valid JSON:
+
+{
+  "title": "...",
+  "days": [
+    {
+      "day": 1,
+      "focus": "...",
+      "tasks": ["...", "...", "..."]
+    }
+  ]
+}
+`;
+
+    const text = await generateResponse([
+      { role: "user", content: prompt }
+    ]);
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error("No JSON found");
+    }
+
+    return JSON.parse(jsonMatch[0]);
+
+  } catch (error) {
+    console.error("Study plan error:", error.message);
+    throw new Error("Failed to generate study plan");
+  }
+};
