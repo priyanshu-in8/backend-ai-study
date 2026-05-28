@@ -14,17 +14,24 @@ const client =
 export const googleLogin =
   async (req, res) => {
     try {
+
       const { token } =
         req.body;
 
+      if (!token) {
+        return res.status(400).json({
+          message:
+            "Google token missing",
+        });
+      }
+
       const ticket =
-        await client.verifyIdToken(
-          {
-            idToken: token,
-            audience:
-              process.env.GOOGLE_CLIENT_ID,
-          }
-        );
+        await client.verifyIdToken({
+          idToken: token,
+          audience:
+            process.env
+              .GOOGLE_CLIENT_ID,
+        });
 
       const payload =
         ticket.getPayload();
@@ -42,6 +49,7 @@ export const googleLogin =
         });
 
       if (!user) {
+
         user =
           await User.create({
             name,
@@ -49,24 +57,69 @@ export const googleLogin =
             profilePic:
               picture,
             googleId: sub,
+            authProvider:
+              "google",
+            isVerified: true,
+
+            level: 1,
+            xpPoints: 0,
+            streakDays: 1,
+            subjects: [],
           });
+
+      } else {
+
+        if (!user.googleId) {
+          user.googleId = sub;
+        }
+
+        await user.save();
       }
 
+      // IMPORTANT FIX
       const jwtToken =
-        generateToken(
+        generateJWT(
           user._id
         );
 
-      res.json({
+      return res.status(200).json({
+        message:
+          "Google login successful",
+
         token:
           jwtToken,
-        user,
+
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          level:
+            user.level || 1,
+          xpPoints:
+            user.xpPoints || 0,
+          streakDays:
+            user.streakDays || 0,
+          subjects:
+            user.subjects || [],
+          isVerified: true,
+          profilePic:
+            user.profilePic,
+        },
       });
 
     } catch (error) {
-      res.status(500).json({
+
+      console.error(
+        "Google auth error:",
+        error
+      );
+
+      return res.status(500).json({
         message:
-          "Google login failed",
+          "Google authentication failed",
+        error:
+          error.message,
       });
     }
   };

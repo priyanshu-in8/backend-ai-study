@@ -16,7 +16,7 @@ export const generateToken = () => {
 export const hashToken = (token) => {
   return crypto.createHash('sha256').update(token).digest('hex');
 };
-
+ 
 /**
  * Generate token expiry time
  * @param {number} expiryMs - Expiry time in milliseconds (default: 15 minutes)
