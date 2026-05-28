@@ -5,6 +5,71 @@ import { generateToken, hashToken, generateTokenExpiry, isTokenExpired } from '.
 import { sendVerificationEmail, sendWelcomeEmail, sendPasswordResetEmail } from '../utils/sendEmail.js';
 import { checkAchievements }
 from "../utils/achievementEngine.js";
+import { OAuth2Client } from "google-auth-library";
+const client =
+  new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID
+  );
+
+export const googleLogin =
+  async (req, res) => {
+    try {
+      const { token } =
+        req.body;
+
+      const ticket =
+        await client.verifyIdToken(
+          {
+            idToken: token,
+            audience:
+              process.env.GOOGLE_CLIENT_ID,
+          }
+        );
+
+      const payload =
+        ticket.getPayload();
+
+      const {
+        email,
+        name,
+        picture,
+        sub,
+      } = payload;
+
+      let user =
+        await User.findOne({
+          email,
+        });
+
+      if (!user) {
+        user =
+          await User.create({
+            name,
+            email,
+            profilePic:
+              picture,
+            googleId: sub,
+          });
+      }
+
+      const jwtToken =
+        generateToken(
+          user._id
+        );
+
+      res.json({
+        token:
+          jwtToken,
+        user,
+      });
+
+    } catch (error) {
+      res.status(500).json({
+        message:
+          "Google login failed",
+      });
+    }
+  };
 
 /**
  * Generate JWT token

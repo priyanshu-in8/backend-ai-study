@@ -15,6 +15,7 @@ import {
    getMissions,
  completeMission,
   getAchievements,  
+  googleLogin
 
 
 } from '../controllers/authController.js';
@@ -35,6 +36,10 @@ router.get(
   "/leaderboard",
   authenticate,
   getLeaderboard
+);
+router.post(
+  "/google",
+  googleLogin
 );
 
 router.get(
