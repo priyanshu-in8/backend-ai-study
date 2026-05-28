@@ -367,54 +367,141 @@ export const register = async (req, res) => {
  * Verify email with token
  */
 export const verifyEmail = async (req, res) => {
+
   try {
-    const { token } = req.body;
+
+const token =
+  req.query.token ||
+  req.body.token ||
+  req.params.token;
+
+    console.log(
+      "VERIFY TOKEN:"
+    );
+
+    console.log(token);
 
     if (!token) {
-      return res.status(400).json({ message: 'Verification token is required' });
+
+      return res.status(400)
+      .json({
+
+        message:
+          "Verification token is required"
+      });
     }
 
-    // Hash the provided token
-    const hashedToken = hashToken(token);
+    // Hash token
 
-    // Find user with matching token
-    const user = await User.findOne({
-      verificationToken: hashedToken,
-      verificationTokenExpires: { $gt: new Date() },
-    });
+    const hashedToken =
+      hashToken(token);
+
+    console.log(
+      "HASHED TOKEN:"
+    );
+
+    console.log(hashedToken);
+
+    // Find user
+
+    const user =
+      await User.findOne({
+
+        verificationToken:
+          hashedToken,
+
+        verificationTokenExpires: {
+          $gt: new Date()
+        },
+      });
+
+    console.log(
+      "FOUND USER:"
+    );
+
+    
 
     if (!user) {
-      return res.status(400).json({ message: 'Invalid or expired verification token' });
+
+      return res.status(400)
+      .json({
+
+        message:
+          "Invalid or expired verification token"
+      });
     }
 
-    // Check if already verified
+    // Already verified
+
     if (user.isVerified) {
-      return res.status(400).json({ message: 'User already verified' });
+
+      return res.status(400)
+      .json({
+
+        message:
+          "User already verified"
+      });
     }
 
-    // Update user
+    // Verify user
+
     user.isVerified = true;
+
     user.clearVerificationToken();
+
     await user.save();
 
-    // Send welcome email
+    // Welcome email
+
     try {
-      await sendWelcomeEmail(user.email, user.name);
+
+      await sendWelcomeEmail(
+        user.email,
+        user.name
+      );
+
     } catch (emailError) {
-      console.error('Failed to send welcome email:', emailError.message);
+
+      console.log(
+        emailError.message
+      );
     }
 
-    res.status(200).json({
-      message: 'Email verified successfully. You can now login.',
+    return res.status(200)
+    .json({
+
+      message:
+        "Email verified successfully",
+
       user: {
+
         id: user._id,
-        email: user.email,
-        isVerified: user.isVerified,
-      },
+
+        email:
+          user.email,
+
+        isVerified:
+          user.isVerified
+      }
     });
+
   } catch (error) {
-    console.error('Email verification error:', error);
-    res.status(500).json({ message: 'Email verification failed', error: error.message });
+
+    console.error(
+      "VERIFY ERROR:"
+    );
+
+    console.error(error);
+
+    return res.status(500)
+    .json({
+
+      message:
+        "Email verification failed",
+
+      error:
+        error.message
+    });
   }
 };
 
@@ -429,13 +516,8 @@ export const login = async (req, res) => {
     /* =========================
        VALIDATION
     ========================= */
-    if (
-      !email ||
-      !password
-    ) {
-      return res.status(
-        400
-      ).json({
+    if (!email || !password) {
+      return res.status(400).json({
         message:
           "Email and password are required",
       });
@@ -447,14 +529,10 @@ export const login = async (req, res) => {
     const user =
       await User.findOne({
         email,
-      }).select(
-        "+password"
-      );
+      }).select("+password");
 
     if (!user) {
-      return res.status(
-        401
-      ).json({
+      return res.status(401).json({
         message:
           "Invalid credentials",
       });
@@ -468,45 +546,85 @@ export const login = async (req, res) => {
         password
       );
 
-    if (
-      !isPasswordCorrect
-    ) {
-      return res.status(
-        401
-      ).json({
+    if (!isPasswordCorrect) {
+      return res.status(401).json({
         message:
           "Invalid credentials",
       });
     }
 
     /* =========================
-       EMAIL VERIFY
+       EMAIL VERIFY CHECK
     ========================= */
-    if (
-      !user.isVerified
-    ) {
-      return res.status(
-        403
-      ).json({
+    if (!user.isVerified) {
+
+      // Generate verification token
+      const verificationToken =
+        generateToken();
+
+      const hashedToken =
+        hashToken(
+          verificationToken
+        );
+
+      const tokenExpiry =
+        generateTokenExpiry(
+          parseInt(
+            process.env
+              .VERIFICATION_TOKEN_EXPIRES ||
+              900000
+          )
+        );
+
+      // Save token to existing user
+      user.verificationToken =
+        hashedToken;
+
+      user.verificationTokenExpires =
+        tokenExpiry;
+
+      await user.save();
+
+      // Send verification email
+      try {
+
+        await sendVerificationEmail(
+          user.email,
+          verificationToken,
+          process.env.CLIENT_URL ||
+            "http://localhost:5173"
+        );
+
+      } catch (emailError) {
+
+        console.error(
+          "Failed to send verification email:",
+          emailError.message
+        );
+
+        return res.status(500).json({
+          message:
+            "Failed to send verification email",
+        });
+      }
+
+      return res.status(401).json({
         message:
-          "Please verify your email first",
+          "Please verify your email first. Verification email sent again.",
       });
     }
 
     /* =========================
        UPDATE STREAK
     ========================= */
-    updateStreak(
-      user
-    );
+    updateStreak(user);
 
     /* =========================
        AUTO LEVEL NORMALIZE
     ========================= */
     user.level =
       getLevelFromXP(
-        user.xpPoints ||
-          0
+        user.xpPoints || 0
       );
 
     /* =========================
@@ -522,6 +640,7 @@ export const login = async (req, res) => {
       ).toDateString() !==
         today
     ) {
+
       generateDailyMissions(
         user
       );
@@ -533,14 +652,12 @@ export const login = async (req, res) => {
        JWT TOKEN
     ========================= */
     const token =
-      generateJWT(
-        user._id
-      );
+      generateJWT(user._id);
 
     /* =========================
        RESPONSE
     ========================= */
-    res.status(200).json({
+    return res.status(200).json({
       message:
         "Login successful",
 
@@ -548,38 +665,44 @@ export const login = async (req, res) => {
 
       user: {
         id: user._id,
-        name: user.name,
+
+        name:
+          user.name,
+
         email:
           user.email,
+
         role:
           user.role,
 
         level:
-          user.level ||
-          1,
+          user.level || 1,
 
         xpPoints:
-          user.xpPoints ||
-          0,
+          user.xpPoints || 0,
 
         streakDays:
-          user.streakDays ||
-          0,
+          user.streakDays || 0,
 
         subjects:
           user.subjects,
-        isVerified: user.isVerified,
+
+        isVerified:
+          user.isVerified,
       },
     });
+
   } catch (error) {
+
     console.error(
       "Login error:",
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Login failed",
+
       error:
         error.message,
     });

@@ -1,6 +1,67 @@
 import mongoose from "mongoose";
 import bcryptjs from "bcryptjs";
 
+
+const studyPlanSchema =
+new mongoose.Schema({
+
+  title: String,
+
+  goal: String,
+
+  roadmap: {
+
+    totalMonths: Number,
+
+    months: [
+      {
+        month: Number,
+
+        summary: String,
+
+        focus: String,
+
+        topics: [
+          String
+        ],
+
+        milestone: String,
+
+        weeks: [
+          {
+            week: Number,
+
+            summary: String,
+
+            focus: String,
+
+            topics: [
+              String
+            ],
+
+            milestone: String,
+
+            days: [
+              {
+                day: Number,
+
+                topic: String
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+
+}, {
+  _id: false
+});
 /* ================= CURRENT PROBLEM SCHEMA ================= */
 
 const currentProblemSchema =
@@ -48,41 +109,6 @@ new mongoose.Schema({
 });
 
 /* ================= STUDY PLAN SCHEMA ================= */
-
-const studyPlanSchema =
-new mongoose.Schema({
-
-  title: String,
-
-  goal: String,
-
-  days: [
-    {
-      day: Number,
-
-      focus: String,
-
-      tasks: [String],
-
-      completed: {
-        type: Boolean,
-        default: false
-      }
-    }
-  ],
-
-  current: [
-    currentProblemSchema
-  ],
-
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-
-}, {
-  _id: false
-});
 
 /* ================= USER SCHEMA ================= */
 
@@ -168,26 +194,45 @@ new mongoose.Schema(
   ],
 
   // Weak Topics
-  weakTopics: [
-    {
-      topic: String,
+ // Weak Topics
+weakTopics: [
+  {
+    topic: String,
 
-      wrongCount: {
-        type: Number,
-        default: 1
-      },
+    wrongCount: {
+      type: Number,
+      default: 1
+    },
 
-      lastWrongAt: {
-        type: Date,
-        default: Date.now
-      }
+    lastWrongAt: {
+      type: Date,
+      default: Date.now
     }
-  ],
+  }
+],
 
-  // Study Plans
-  studyPlans: [
-    studyPlanSchema
-  ],
+// =====================
+// SHORT-TERM PLANS
+// =====================
+currentCode:[currentProblemSchema],
+studyPlans: [
+  studyPlanSchema
+],
+
+// =====================
+// LONG-TERM PLANS
+// =====================
+
+longTermPlans: [
+  studyPlanSchema
+],
+
+// =====================
+// DAILY MISSIONS
+// =====================
+
+
+
 
   // Daily Missions
   dailyMissions: [

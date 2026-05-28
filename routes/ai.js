@@ -1,50 +1,98 @@
-import express from 'express';
-import { authenticate } from "../middleware/auth.js";
-import {
-  chat,
-  generateQuizEndpoint,
-  summarize,
-  generateFlashcardsEndpoint,
-  generateCodingProblemEndpoint,
-  evaluateCodingSolutionEndpoint,
-  explain,
-  notes,
-  submitQuizResult,
-  recommendQuiz,
-  generateStudyPlan,
-  getStudyPlans,
-  completeStudyDay,
-  getTodayPlan,
-  runCodeDirectly
+import express from "express";
 
-} from '../controllers/aiController.js';
-// NOTE: during development we allow unauthenticated access to AI endpoints so the frontend
-// can call them directly. In production you SHOULD enable authentication (see middleware/auth.js)
-// and add appropriate rate limiting / quotas per user.
-import rateLimit from 'express-rate-limit';
+import rateLimit from "express-rate-limit";
+
+import { authenticate }
+from "../middleware/auth.js";
+
+import {
+
+  chat,
+
+  generateQuizEndpoint,
+
+  summarize,
+
+  generateFlashcardsEndpoint,
+
+  generateCodingProblemEndpoint,
+
+  evaluateCodingSolutionEndpoint,
+
+  explain,
+
+  notes,
+
+  submitQuizResult,
+
+  recommendQuiz,
+
+  getStudyPlans,
+
+  completeStudyDay,
+
+  getTodayPlan,
+
+  runCodeDirectly,
+
+  generateShortTermPlanController,
+
+  generateLongTermPlanController,
+  
+  getTodayTasks,
+  
+  createLongTermPlan
+
+} from "../controllers/aiController.js";
 
 const router = express.Router();
 
-// Rate limiter for AI endpoints (prevent abuse)
 const aiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // 30 requests per window
-  message: 'Too many AI requests, please try again later',
+
+  windowMs: 15 * 60 * 1000,
+
+  max: 30,
+
+  message:
+    "Too many AI requests, please try again later",
+
   standardHeaders: true,
+
   legacyHeaders: false,
 });
 
-/**
- * POST /api/ai/chat
- * Generate chat response
- */
+
+// =============================
+// STUDY PLANS
+// =============================
+
+router.post(
+  "/generate-short-term-plan",
+  authenticate,
+  aiLimiter,
+  generateShortTermPlanController
+);
+
+router.post(
+  "/generate-long-term-plan",
+  authenticate,
+  aiLimiter,
+  generateLongTermPlanController
+);
+
+router.get(
+  "/study-plans",
+  authenticate,
+  aiLimiter,
+  getStudyPlans
+);
+
 router.get(
   "/today-plan",
   authenticate,
   aiLimiter,
   getTodayPlan
 );
-
 
 router.patch(
   "/study-plan/:planId/:dayNumber",
@@ -54,20 +102,10 @@ router.patch(
 );
 
 
-router.get(
-  "/study-plans",
-  authenticate,
-  aiLimiter,
-  getStudyPlans
-);
+// =============================
+// QUIZ
+// =============================
 
-router.post(
-  "/study-plan",
-  authenticate,
-  aiLimiter,
-  generateStudyPlan
-);
-// Development: no authentication
 router.get(
   "/recommend-quiz",
   authenticate,
@@ -76,30 +114,113 @@ router.get(
 );
 
 router.post(
-  "/study-plan",
+  "/quiz",
   authenticate,
   aiLimiter,
-  generateStudyPlan
+  generateQuizEndpoint
 );
 
-router.post('/chat', authenticate, aiLimiter, chat);
+router.post(
+  "/quiz/submit",
+  authenticate,
+  aiLimiter,
+  submitQuizResult
+);
 
-router.post('/quiz', authenticate, aiLimiter, generateQuizEndpoint);
 
-router.post('/summarize', authenticate, aiLimiter, summarize);
+// =============================
+// CHAT
+// =============================
 
-router.post('/flashcards', authenticate, aiLimiter, generateFlashcardsEndpoint);
+router.post(
+  "/chat",
+  authenticate,
+  aiLimiter,
+  chat
+);
 
-router.post('/coding', authenticate, aiLimiter, generateCodingProblemEndpoint);
 
-router.post('/coding/evaluate', authenticate, aiLimiter, evaluateCodingSolutionEndpoint);
+// =============================
+// SUMMARIZE
+// =============================
 
-router.post('/coding/run', authenticate, aiLimiter, runCodeDirectly);
+router.post(
+  "/summarize",
+  authenticate,
+  aiLimiter,
+  summarize
+);
 
-router.post('/explain', authenticate, aiLimiter, explain);
 
-router.post('/notes', authenticate, aiLimiter, notes);
+// =============================
+// FLASHCARDS
+// =============================
 
-router.post('/quiz/submit', authenticate, aiLimiter, submitQuizResult);
+router.post(
+  "/flashcards",
+  authenticate,
+  aiLimiter,
+  generateFlashcardsEndpoint
+);
+
+
+// =============================
+// CODING
+// =============================
+
+router.post(
+  "/coding",
+  authenticate,
+  aiLimiter,
+  generateCodingProblemEndpoint
+);
+
+router.post(
+  "/coding/evaluate",
+  authenticate,
+  aiLimiter,
+  evaluateCodingSolutionEndpoint
+);
+
+router.post(
+  "/coding/run",
+  authenticate,
+  aiLimiter,
+  runCodeDirectly
+);
+
+
+// =============================
+// NOTES & EXPLAIN
+// =============================
+
+router.post(
+  "/explain",
+  authenticate,
+  aiLimiter,
+  explain
+);
+
+router.post(
+  "/notes",
+  authenticate,
+  aiLimiter,
+  notes
+);
+
+
+
+router.get(
+  "/today-tasks",
+  authenticate,
+  aiLimiter,
+  getTodayTasks
+);
+router.post(
+  "/long-term-plan",
+  authenticate,
+  aiLimiter,
+  createLongTermPlan
+);
 
 export default router;

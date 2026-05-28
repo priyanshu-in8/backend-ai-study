@@ -66,8 +66,10 @@ router.post('/register', register);
  * POST /api/auth/verify-email
  * Verify user email with token
  */
-router.post('/verify-email', verifyEmail);
-
+router.get(
+  "/verify-email",
+  verifyEmail
+);
 /**
  * POST /api/auth/login
  * Login user

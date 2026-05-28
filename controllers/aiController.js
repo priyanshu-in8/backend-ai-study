@@ -7,11 +7,14 @@ import {
   evaluateCodingSolution,
   explainConcept,
   generateStudyNotes,
-  generateAIStudyPlan
+  generateAIStudyPlan,
+  generateShortTermPlan,
+  generateLongTermPlan
  
 } from '../services/aiService.js';
 import User from "../models/User.js";
 import codeExecutor from '../utils/codeExecutor.js';
+import { studyPlanSchema } from "../validators/studyPlan.validator.js";
 
 
 export const recommendQuiz = async (req, res) => {
@@ -1000,6 +1003,402 @@ export const runCodeDirectly = async (req, res) => {
     return res.status(500).json({
       message: 'Failed to execute code',
       error: error.message
+    });
+  }
+};
+
+
+
+
+export const createStudyPlan = async (req, res) => {
+  try {
+    const validatedData = studyPlanSchema.parse(req.body);
+
+    const result = await generateAIStudyPlan(
+      validatedData.goal,
+      validatedData.shortTermDays,
+      validatedData.longTermDays,
+      validatedData.hoursPerDay,
+      validatedData.level
+    );
+
+    res.status(200).json(result);
+
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const generateShortTermPlanController =
+async (req, res) => {
+
+  try {
+
+    const {
+      goal,
+      days,
+      hoursPerDay,
+      level
+    } = req.body;
+
+    const plan =
+      await generateShortTermPlan(
+        goal,
+        days,
+        hoursPerDay,
+        level
+      );
+
+    return res.status(200).json({
+
+      success: true,
+
+      data: plan
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+
+      success: false,
+
+      message:
+        "Failed to generate short-term plan",
+
+      error:
+        error.message
+    });
+  }
+};
+
+export const generateLongTermPlanController =
+async (req, res) => {
+
+  try {
+
+    const {
+      goal,
+      days,
+      level
+    } = req.body;
+
+    const plan =
+      await generateLongTermPlan(
+        goal,
+        days,
+        level
+      );
+
+    return res.status(200).json({
+
+      success: true,
+
+      data: plan
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+
+      success: false,
+
+      message:
+        "Failed to generate long-term plan",
+
+      error:
+        error.message
+    });
+  }
+};
+
+export const getTodayTasks =
+async (req, res) => {
+
+  try {
+
+    const user =
+      await User.findById(
+        req.user.userId
+      );
+
+    const weakTopics =
+      user.weakTopics || [];
+
+    const incompleteTasks =
+      user.incompleteTasks || [];
+
+    const todayTask =
+      await generateTodayTask({
+
+        goal:
+          user.currentGoal,
+
+        weakTopics,
+
+        incompleteTasks,
+
+        dayNumber:
+          user.currentDay || 1,
+
+        hoursPerDay:
+          user.hoursPerDay || 2,
+
+        level:
+          user.level || "beginner"
+      });
+
+    return res.status(200).json({
+
+      success: true,
+
+      data: todayTask
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+
+      success: false,
+
+      message:
+        "Failed to generate today tasks",
+
+      error:
+        error.message
+    });
+  }
+};
+
+export const createLongTermPlan =
+async (req, res) => {
+
+  try {
+
+    console.log(
+      "======================"
+    );
+
+    console.log(
+      "LONG TERM API HIT"
+    );
+
+    console.log(
+      "REQ USER:"
+    );
+
+    console.log(req.user);
+
+    console.log(
+      "REQ BODY:"
+    );
+
+    console.log(req.body);
+
+    // ======================
+    // FIND USER
+    // ======================
+
+   const userId =
+  req.user.userId;
+
+const user =
+  await User.findById(
+    userId
+  );
+
+    console.log(
+      "USER FOUND:"
+    );
+
+    console.log(user);
+
+    if (!user) {
+
+      console.log(
+        "USER NOT FOUND"
+      );
+
+      return res.status(404)
+      .json({
+
+        success: false,
+
+        message:
+          "User not found"
+      });
+    }
+
+    // ======================
+    // BODY
+    // ======================
+
+    const {
+      goal,
+      totalDays = 150,
+      level = "beginner"
+    } = req.body;
+
+    console.log(
+      "GOAL:",
+      goal
+    );
+
+    console.log(
+      "TOTAL DAYS:",
+      totalDays
+    );
+
+    console.log(
+      "LEVEL:",
+      level
+    );
+
+    // ======================
+    // GENERATE ROADMAP
+    // ======================
+
+    console.log(
+      "GENERATING ROADMAP..."
+    );
+
+    const roadmap =
+      await generateLongTermPlan(
+        goal,
+        totalDays,
+        level
+      );
+
+    console.log(
+      "ROADMAP GENERATED"
+    );
+
+    console.log(roadmap);
+
+    // ======================
+    // PUSH PLAN
+    // ======================
+
+    console.log(
+      "OLD PLAN COUNT:"
+    );
+
+    console.log(
+      user.longTermPlans
+        ?.length
+    );
+
+    user.longTermPlans.push({
+
+      title:
+        roadmap.title,
+
+      goal:
+        roadmap.goal,
+
+      roadmap,
+
+      createdAt:
+        new Date()
+    });
+
+    console.log(
+      "PLAN PUSHED"
+    );
+
+    console.log(
+      "NEW PLAN COUNT:"
+    );
+
+    console.log(
+      user.longTermPlans
+        ?.length
+    );
+
+    // ======================
+    // MARK MODIFIED
+    // ======================
+
+    user.markModified(
+      "longTermPlans"
+    );
+
+    console.log(
+      "MARK MODIFIED DONE"
+    );
+
+    // ======================
+    // SAVE USER
+    // ======================
+
+    console.log(
+      "SAVING USER..."
+    );
+
+    const savedUser =
+      await user.save();
+
+    console.log(
+      "USER SAVED"
+    );
+
+    console.log(
+      savedUser
+        .longTermPlans
+        ?.length
+    );
+
+    console.log(
+      "======================"
+    );
+
+    // ======================
+    // RESPONSE
+    // ======================
+
+    return res.status(201)
+    .json({
+
+      success: true,
+
+      message:
+        "Long-term roadmap created successfully",
+
+      data: roadmap
+    });
+
+  } catch (error) {
+
+    console.log(
+      "======================"
+    );
+
+    console.log(
+      "LONG TERM ERROR"
+    );
+
+    console.log(error);
+
+    console.log(
+      error.message
+    );
+
+    console.log(
+      "======================"
+    );
+
+    return res.status(500)
+    .json({
+
+      success: false,
+
+      message:
+        "Failed to create roadmap",
+
+      error:
+        error.message
     });
   }
 };

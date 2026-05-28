@@ -903,46 +903,725 @@ export const generateStudyNotes = async (topic) => {
 //
 export const generateAIStudyPlan = async (
   goal,
-  days = 7,
+  shortTermDays = 7,
+  longTermDays = 30,
   hoursPerDay = 2,
   level = "beginner"
 ) => {
-  try {
-    const prompt = `
-Create a ${days}-day study plan.
+
+  const prompt = `
+You are an expert AI study planner.
+
+IMPORTANT:
+- Return ONLY valid JSON
+- No markdown
+- No explanation
+- No trailing commas
+- Coding problems, quizzes, flashcards, summaries, and notes are all valid study activities
+- Complete ALL brackets properly
+- Never cut off response
+
+Generate:
+1. Short-term daily study plan
+2. Long-term weekly roadmap
 
 Goal: ${goal}
 Level: ${level}
 Daily Study Time: ${hoursPerDay} hours
 
-Return ONLY valid JSON:
+Short-term duration: ${shortTermDays} days
+Long-term duration: ${longTermDays} days
+
+JSON format:
 
 {
-  "title": "...",
-  "days": [
+  "shortTermPlan": {
+    "title": "",
+    "duration": "",
+    "objective": "",
+    "days": []
+  },
+  "longTermPlan": {
+    "title": "",
+    "duration": "",
+    "objective": "",
+    "weeks": []
+  }
+}
+`;
+
+  try {
+
+    let retries = 3;
+
+    while (retries > 0) {
+
+      try {
+
+        const response =
+          await generateResponse([
+            {
+              role: "user",
+              content: prompt,
+            },
+          ]);
+
+        console.log("RAW RESPONSE:");
+        console.log(response);
+
+        let cleaned = response
+          .replace(/```json/g, "")
+          .replace(/```/g, "")
+          .trim();
+
+        // Extract JSON safely
+        const start = cleaned.indexOf("{");
+        const end = cleaned.lastIndexOf("}");
+
+        if (start === -1 || end === -1) {
+          throw new Error("Incomplete JSON");
+        }
+
+        cleaned = cleaned.slice(start, end + 1);
+
+        // Remove trailing commas
+        cleaned = cleaned.replace(
+          /,\s*([}\]])/g,
+          "$1"
+        );
+
+        const parsed = JSON.parse(cleaned);
+
+        return {
+          success: true,
+          data: parsed,
+        };
+
+      } catch (parseError) {
+
+        console.log(
+          "Retrying AI generation..."
+        );
+
+        retries--;
+      }
+    }
+
+    throw new Error(
+      "AI failed to generate valid JSON after retries"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "AI Study Plan Error:",
+      error.message
+    );
+
+    return {
+      success: false,
+      message:
+        "Failed to generate AI study plan",
+      error: error.message,
+    };
+  }
+};
+
+
+
+export const generateShortTermPlan = async (
+  goal,
+  days = 7,
+  level = "beginner"
+) => {
+
+  try {
+
+    const prompt = `
+You are an expert AI study roadmap planner.
+
+TASK:
+Generate a short-term study roadmap.
+
+GOAL:
+${goal}
+
+LEVEL:
+${level}
+
+DURATION:
+${days} days
+
+IMPORTANT RULES:
+- Return ONLY valid JSON
+- No markdown
+- No explanations
+- No trailing commas
+- Keep response compact
+- One topic per day
+- Topics should follow proper learning sequence
+- Beginner topics first
+- Topic names should be descriptive and beginner-friendly
+- Mention concept + practical focus
+- Ensure complete parsable JSON
+
+RETURN FORMAT:
+
+{
+  "title": "",
+  "goal": "",
+  "level": "",
+  "duration": "${days} days",
+  "topics": [
     {
       "day": 1,
-      "focus": "...",
-      "tasks": ["...", "...", "..."]
+      "topic": ""
     }
   ]
 }
 `;
 
-    const text = await generateResponse([
-      { role: "user", content: prompt }
-    ]);
+    const response =
+      await generateResponse([
+        {
+          role: "user",
+          content: prompt,
+        },
+      ]);
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    console.log(
+      "RAW SHORT-TERM RESPONSE:"
+    );
 
-    if (!jsonMatch) {
-      throw new Error("No JSON found");
+    console.log(response);
+
+    let cleaned = response
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .replace(/,\s*([}\]])/g, "$1")
+      .trim();
+
+    const start =
+      cleaned.indexOf("{");
+
+    const end =
+      cleaned.lastIndexOf("}");
+
+    if (
+      start === -1 ||
+      end === -1
+    ) {
+
+      throw new Error(
+        "Invalid JSON structure"
+      );
     }
 
-    return JSON.parse(jsonMatch[0]);
+    cleaned =
+      cleaned.slice(
+        start,
+        end + 1
+      );
+
+    cleaned = cleaned
+      .replace(/\n/g, "")
+      .replace(/\r/g, "")
+      .trim();
+
+    console.log(
+      "CLEANED SHORT-TERM JSON:"
+    );
+
+    console.log(cleaned);
+
+    const parsed =
+      JSON.parse(cleaned);
+
+    // Validation
+
+    if (
+      !parsed.topics ||
+      !Array.isArray(parsed.topics)
+    ) {
+
+      throw new Error(
+        "Topics array missing"
+      );
+    }
+
+    // Ensure proper structure
+
+    parsed.topics =
+      parsed.topics.map(
+        (item, index) => ({
+          day: index + 1,
+          topic:
+            item.topic ||
+            "General Practice"
+        })
+      );
+
+    return parsed;
 
   } catch (error) {
-    console.error("Study plan error:", error.message);
-    throw new Error("Failed to generate study plan");
+
+    console.error(
+      "Short-term roadmap error:",
+      error.message
+    );
+
+    throw new Error(
+      "Failed to generate short-term roadmap"
+    );
+  }
+};
+export const generateLongTermPlan = async (
+  goal,
+  totalDays = 150,
+  level = "beginner"
+) => {
+
+  try {
+
+    const chunkSize = 10;
+
+    let allDays = [];
+
+    // =========================
+    // GENERATE DAY TOPICS
+    // =========================
+
+    for (
+      let startDay = 1;
+      startDay <= totalDays;
+      startDay += chunkSize
+    ) {
+
+      const endDay =
+        Math.min(
+          startDay +
+          chunkSize - 1,
+          totalDays
+        );
+
+      const prompt = `
+You are an expert AI roadmap planner.
+
+TASK:
+Generate roadmap topics.
+
+GOAL:
+${goal}
+
+LEVEL:
+${level}
+
+Generate ONLY days
+${startDay} to ${endDay}
+
+IMPORTANT:
+- Return ONLY valid JSON
+- No markdown
+- No explanations
+- One topic per day
+- Beginner-friendly order
+- Topic names should be descriptive
+- Ensure valid JSON
+
+RETURN FORMAT:
+
+{
+  "days": [
+    {
+      "day": ${startDay},
+      "topic": ""
+    }
+  ]
+}
+`;
+
+      const response =
+        await generateResponse([
+          {
+            role: "user",
+            content: prompt,
+          },
+        ]);
+
+      let cleaned = response
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .replace(
+          /,\s*([}\]])/g,
+          "$1"
+        )
+        .trim();
+
+      const start =
+        cleaned.indexOf("{");
+
+      const end =
+        cleaned.lastIndexOf("}");
+
+      if (
+        start === -1 ||
+        end === -1
+      ) {
+
+        throw new Error(
+          `Invalid JSON for days ${startDay}-${endDay}`
+        );
+      }
+
+      cleaned =
+        cleaned.slice(
+          start,
+          end + 1
+        );
+
+      const parsed =
+        JSON.parse(cleaned);
+
+      if (
+        parsed.days &&
+        Array.isArray(
+          parsed.days
+        )
+      ) {
+
+        allDays = [
+          ...allDays,
+          ...parsed.days
+        ];
+      }
+    }
+
+    // =========================
+    // MONTH → WEEK → DAY
+    // =========================
+
+    const months = [];
+
+    let currentMonth = 1;
+
+    let dayIndex = 0;
+
+    while (
+      dayIndex < allDays.length
+    ) {
+
+      const monthWeeks = [];
+
+      const monthTopics =
+        [];
+
+      // 4 weeks per month
+
+      for (
+        let w = 0;
+        w < 4 &&
+        dayIndex <
+          allDays.length;
+        w++
+      ) {
+
+        const weekDays = [];
+
+        const weekTopics =
+          [];
+
+        // 7 days per week
+
+        for (
+          let d = 0;
+          d < 7 &&
+          dayIndex <
+            allDays.length;
+          d++
+        ) {
+
+          const currentDay =
+            allDays[
+              dayIndex
+            ];
+
+          weekDays.push(
+            currentDay
+          );
+
+          weekTopics.push(
+            currentDay.topic
+          );
+
+          monthTopics.push(
+            currentDay.topic
+          );
+
+          dayIndex++;
+        }
+
+        // Remove duplicates
+
+        const uniqueWeekTopics =
+          [
+            ...new Set(
+              weekTopics
+            )
+          ];
+
+        monthWeeks.push({
+
+          week: w + 1,
+
+          summary:
+            `This week focuses on ${uniqueWeekTopics
+              .slice(0, 3)
+              .join(", ")}.`,
+
+          focus:
+            uniqueWeekTopics
+              .slice(0, 4)
+              .join(", "),
+
+          topics:
+            uniqueWeekTopics,
+
+          milestone:
+            `Complete practice and revision for ${uniqueWeekTopics.length} topics.`,
+
+          days: weekDays
+        });
+      }
+
+      // Remove duplicates
+
+      const uniqueTopics =
+        [
+          ...new Set(
+            monthTopics
+          )
+        ];
+
+      months.push({
+
+        month:
+          currentMonth,
+
+        summary:
+          `This month focuses on ${uniqueTopics
+            .slice(0, 4)
+            .join(", ")} and strengthens problem-solving skills.`,
+
+        focus:
+          uniqueTopics
+            .slice(0, 5)
+            .join(", "),
+
+        topics:
+          uniqueTopics,
+
+        milestone:
+          `Complete mastery of ${uniqueTopics.length} major topics.`,
+
+        weeks:
+          monthWeeks
+      });
+
+      currentMonth++;
+    }
+
+    return {
+
+      title:
+        `${goal} Roadmap`,
+
+      goal,
+
+      level,
+
+      duration:
+        `${totalDays} days`,
+
+      totalMonths:
+        months.length,
+
+      months
+    };
+
+  } catch (error) {
+
+    console.error(
+      "Long-term roadmap error:",
+      error.message
+    );
+
+    throw new Error(
+      "Failed to generate roadmap"
+    );
+  }
+};
+
+export const generateDayPlan = async ({
+  todayTopic,
+  day = 1,
+  hoursPerDay = 2,
+  level = "beginner",
+  weakTopics = [],
+  incompleteTasks = []
+}) => {
+
+  try {
+
+    const weakTopicText =
+      weakTopics.length > 0
+        ? weakTopics.join(", ")
+        : "None";
+
+    const incompleteText =
+      incompleteTasks.length > 0
+        ? incompleteTasks
+            .map(task => task.title)
+            .join(", ")
+        : "None";
+
+    const prompt = `
+You are an AI daily study planner.
+
+Generate ONLY one day's study plan.
+
+Today's Topic:
+${todayTopic}
+
+Day:
+${day}
+
+Level:
+${level}
+
+Study Time:
+${hoursPerDay} hours
+
+Weak Topics:
+${weakTopicText}
+
+Incomplete Tasks:
+${incompleteText}
+
+IMPORTANT:
+- Return ONLY valid JSON
+- No markdown
+- No explanations
+- EXACTLY 5 activities
+- Keep response compact
+- Focus on weak topics
+- Include incomplete task recovery
+
+Allowed activity types:
+- coding
+- quiz
+- flashcard
+- notes
+- revision
+- focus
+
+Return format:
+
+{
+  "day": ${day},
+  "todayTopic": "${todayTopic}",
+  "activities": [
+    {
+      "id": "1",
+      "type": "coding",
+      "title": "",
+      "completed": false
+    },
+    {
+      "id": "2",
+      "type": "quiz",
+      "title": "",
+      "completed": false
+    },
+    {
+      "id": "3",
+      "type": "flashcard",
+      "title": "",
+      "completed": false
+    },
+    {
+      "id": "4",
+      "type": "notes",
+      "title": "",
+      "completed": false
+    },
+    {
+      "id": "5",
+      "type": "revision",
+      "title": "",
+      "completed": false
+    }
+  ]
+}
+`;
+
+    const response =
+      await generateResponse([
+        {
+          role: "user",
+          content: prompt,
+        },
+      ]);
+
+    console.log("RAW RESPONSE:");
+    console.log(response);
+
+    let cleaned = response
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .replace(/,\s*([}\]])/g, "$1")
+      .trim();
+
+    const start =
+      cleaned.indexOf("{");
+
+    const end =
+      cleaned.lastIndexOf("}");
+
+    if (
+      start === -1 ||
+      end === -1
+    ) {
+
+      throw new Error(
+        "Invalid JSON response"
+      );
+    }
+
+    cleaned =
+      cleaned.slice(
+        start,
+        end + 1
+      );
+
+    cleaned = cleaned
+      .replace(/\n/g, "")
+      .replace(/\r/g, "")
+      .trim();
+
+    console.log("CLEANED JSON:");
+    console.log(cleaned);
+
+    return JSON.parse(cleaned);
+
+  } catch (error) {
+
+    console.error(
+      "Day plan error:",
+      error.message
+    );
+
+    throw new Error(
+      "Failed to generate day plan"
+    );
   }
 };

@@ -47,7 +47,13 @@ const connectDB = async () => {
 // Connect to database
 connectDB();
 
-// Health check endpoint
+// Health check endpoints
+// For Docker health checks and monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
+
+// Detailed health check for API
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'OK',

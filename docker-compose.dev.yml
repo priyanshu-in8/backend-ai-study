@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-study-backend-dev
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/aiStudy?authSource=admin
+      - JWT_SECRET=your-secret-key-change-in-production
+      - CLIENT_URL=http://localhost:5173
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASS=${EMAIL_PASS}
+    restart: unless-stopped
+    networks:
+      - ai-study-network
+    volumes:
+      - .:/app
+      - /app/node_modules
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: npm run dev
+
+  mongodb:
+    image: mongo:7.0-alpine
+    container_name: ai-study-mongodb-dev
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=aiStudy
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    restart: unless-stopped
+    networks:
+      - ai-study-network
+
+networks:
+  ai-study-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  mongodb_config:
