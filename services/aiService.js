@@ -1031,9 +1031,11 @@ JSON format:
 
 export const generateShortTermPlan = async (
   goal,
-  days = 7,
+  days ,
   level = "beginner"
 ) => {
+
+  console.log("Generating short-term plan with:", { goal, days, level });
 
   try {
 
@@ -1177,7 +1179,7 @@ RETURN FORMAT:
 };
 export const generateLongTermPlan = async (
   goal,
-  totalDays = 150,
+  totalDays ,
   level = "beginner"
 ) => {
 

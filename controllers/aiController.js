@@ -119,7 +119,7 @@ export const generateStudyPlan = async (req, res) => {
   try {
     const {
       goal,
-      days = 7,
+      days ,
       hoursPerDay = 2,
       level = "beginner"
     } = req.body;
@@ -1052,11 +1052,31 @@ async (req, res) => {
         level
       );
 
+    // Save plan to database
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    user.studyPlans.unshift({
+      title: goal,
+      goal: goal,
+      roadmap: plan
+    });
+
+    await user.save();
+
     return res.status(200).json({
 
       success: true,
 
-      data: plan
+      data: plan,
+
+      message: "Short-term plan generated and saved successfully"
     });
 
   } catch (error) {
@@ -1085,6 +1105,11 @@ async (req, res) => {
       level
     } = req.body;
 
+    console.log(
+      "Generating long-term plan with:",
+      { goal, days, level }
+    );
+
     const plan =
       await generateLongTermPlan(
         goal,
@@ -1092,11 +1117,31 @@ async (req, res) => {
         level
       );
 
+    // Save plan to database
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    user.longTermPlans.unshift({
+      title: goal,
+      goal: goal,
+      roadmap: plan
+    });
+
+    await user.save();
+
     return res.status(200).json({
 
       success: true,
 
-      data: plan
+      data: plan,
+
+      message: "Long-term plan generated and saved successfully"
     });
 
   } catch (error) {
@@ -1336,6 +1381,8 @@ const user =
     console.log(
       "SAVING USER..."
     );
+
+    
 
     const savedUser =
       await user.save();
