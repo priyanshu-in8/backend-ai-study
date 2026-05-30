@@ -161,40 +161,104 @@ export const generateStudyPlan = async (req, res) => {
 
 export const getTodayPlan = async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
 
-    if (!user || user.studyPlans.length === 0) {
+    const user =
+      await User.findById(
+        req.user.userId
+      );
+
+    if (
+      !user ||
+      user.studyPlans.length === 0
+    ) {
       return res.status(404).json({
         message: "No study plan found"
       });
     }
 
-    const latestPlan = user.studyPlans[0];
+    const latestPlan =
+      user.studyPlans[0];
 
-    const nextDay = latestPlan.days.find(
-      day => day.completed === false
-    );
+    const roadmap =
+      latestPlan.roadmap;
 
-    if (!nextDay) {
+    if (
+      !roadmap ||
+      !roadmap.months
+    ) {
+      return res.status(404).json({
+        message: "Roadmap data missing"
+      });
+    }
+
+    let todayTask = null;
+
+    for (const month of roadmap.months) {
+
+      for (const week of month.weeks) {
+
+        const pendingDay =
+          week.days.find(
+            day => !day.completed
+          );
+
+        if (pendingDay) {
+
+          todayTask = {
+
+            month:
+              month.month,
+
+            week:
+              week.week,
+
+            day:
+              pendingDay.day,
+
+            topic:
+              pendingDay.topic,
+
+            focus:
+              week.focus,
+
+            milestone:
+              week.milestone
+          };
+
+          break;
+        }
+      }
+
+      if (todayTask) break;
+    }
+
+    if (!todayTask) {
+
       return res.status(200).json({
-        message: "Plan completed",
+
+        message:
+          "Plan completed",
+
         data: null
       });
     }
 
-    res.status(200).json({
-      message: "Today's task",
-      data: {
-        title: latestPlan.title,
-        day: nextDay.day,
-        focus: nextDay.focus,
-        tasks: nextDay.tasks
-      }
+    return res.status(200).json({
+
+      message:
+        "Today's task",
+
+      data: todayTask
     });
 
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to load today's task"
+
+    console.log(error);
+
+    return res.status(500).json({
+
+      message:
+        "Failed to load today's task"
     });
   }
 };
@@ -204,11 +268,29 @@ export const getStudyPlans = async (req, res) => {
     const user = await User.findById(req.user.userId);
 
     const plans = user.studyPlans.map(plan => {
-      const totalDays = plan.days.length;
+      let totalDays = 0;
+      let completedDays = 0;
 
-      const completedDays = plan.days.filter(
-        d => d.completed
-      ).length;
+      // Handle new roadmap format (with months/weeks/days)
+      if (plan.roadmap && plan.roadmap.months) {
+        const allDays = [];
+        
+        for (const month of plan.roadmap.months) {
+          for (const week of month.weeks) {
+            for (const day of week.days) {
+              allDays.push(day);
+            }
+          }
+        }
+        
+        totalDays = allDays.length;
+        completedDays = allDays.filter(d => d.completed).length;
+      } 
+      // Handle old format (with days array directly)
+      else if (plan.days && Array.isArray(plan.days)) {
+        totalDays = plan.days.length;
+        completedDays = plan.days.filter(d => d.completed).length;
+      }
 
       const progress =
         totalDays > 0
@@ -230,6 +312,173 @@ export const getStudyPlans = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to load plans"
+    });
+  }
+};
+
+export const getAllPlans = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Helper function to calculate plan progress
+    const calculatePlanProgress = (plan) => {
+      let totalDays = 0;
+      let completedDays = 0;
+
+      if (plan.roadmap && plan.roadmap.months) {
+        const allDays = [];
+        
+        for (const month of plan.roadmap.months) {
+          for (const week of month.weeks) {
+            for (const day of week.days) {
+              allDays.push(day);
+            }
+          }
+        }
+        
+        totalDays = allDays.length;
+        completedDays = allDays.filter(d => d.completed).length;
+      } 
+      else if (plan.days && Array.isArray(plan.days)) {
+        totalDays = plan.days.length;
+        completedDays = plan.days.filter(d => d.completed).length;
+      }
+
+      const progress =
+        totalDays > 0
+          ? Math.round((completedDays / totalDays) * 100)
+          : 0;
+
+      return {
+        ...plan.toObject(),
+        totalDays,
+        completedDays,
+        progress,
+        type: "short-term"
+      };
+    };
+
+    // Get short-term plans
+    const shortTermPlans = (user.studyPlans || []).map(calculatePlanProgress);
+
+    // Get long-term plans
+    const longTermPlans = (user.longTermPlans || []).map(plan => {
+      const planWithProgress = calculatePlanProgress(plan);
+      return {
+        ...planWithProgress,
+        type: "long-term"
+      };
+    });
+
+    // Combine both
+    const allPlans = {
+      shortTermPlans,
+      longTermPlans,
+      total: shortTermPlans.length + longTermPlans.length
+    };
+
+    res.status(200).json({
+      success: true,
+      data: allPlans
+    });
+
+  } catch (error) {
+    console.error("Error fetching all plans:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to load plans",
+      error: error.message
+    });
+  }
+};
+
+export const getLatestPlans = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    // Helper function to calculate plan progress
+    const calculatePlanProgress = (plan) => {
+      let totalDays = 0;
+      let completedDays = 0;
+
+      if (plan.roadmap && plan.roadmap.months) {
+        const allDays = [];
+        
+        for (const month of plan.roadmap.months) {
+          for (const week of month.weeks) {
+            for (const day of week.days) {
+              allDays.push(day);
+            }
+          }
+        }
+        
+        totalDays = allDays.length;
+        completedDays = allDays.filter(d => d.completed).length;
+      } 
+      else if (plan.days && Array.isArray(plan.days)) {
+        totalDays = plan.days.length;
+        completedDays = plan.days.filter(d => d.completed).length;
+      }
+
+      const progress =
+        totalDays > 0
+          ? Math.round((completedDays / totalDays) * 100)
+          : 0;
+
+      return {
+        ...plan.toObject(),
+        totalDays,
+        completedDays,
+        progress
+      };
+    };
+
+    // Get latest short-term plan (first in array, as new plans are unshifted)
+    const latestShortTermPlan = (user.studyPlans && user.studyPlans.length > 0)
+      ? calculatePlanProgress(user.studyPlans[0])
+      : null;
+
+    // Get latest long-term plan (first in array, as new plans are unshifted)
+    const latestLongTermPlan = (user.longTermPlans && user.longTermPlans.length > 0)
+      ? calculatePlanProgress(user.longTermPlans[0])
+      : null;
+
+    const latestPlans = {
+      shortTermPlan: latestShortTermPlan ? {
+        ...latestShortTermPlan,
+        type: "short-term"
+      } : null,
+      longTermPlan: latestLongTermPlan ? {
+        ...latestLongTermPlan,
+        type: "long-term"
+      } : null
+    };
+
+    res.status(200).json({
+      success: true,
+      data: latestPlans
+    });
+
+  } catch (error) {
+    console.error("Error fetching latest plans:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to load latest plans",
+      error: error.message
     });
   }
 };
@@ -1052,21 +1301,20 @@ async (req, res) => {
         level
       );
 
-    // Save plan to database
-    const user = await User.findById(req.user.userId);
+    const user =
+      await User.findById(
+        req.user.userId
+      );
 
     if (!user) {
+
       return res.status(404).json({
         success: false,
         message: "User not found"
       });
     }
 
-    user.studyPlans.unshift({
-      title: goal,
-      goal: goal,
-      roadmap: plan
-    });
+    user.studyPlans.unshift(plan);
 
     await user.save();
 
@@ -1076,7 +1324,8 @@ async (req, res) => {
 
       data: plan,
 
-      message: "Short-term plan generated and saved successfully"
+      message:
+        "Short-term plan generated and saved successfully"
     });
 
   } catch (error) {

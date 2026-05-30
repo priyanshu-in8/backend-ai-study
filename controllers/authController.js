@@ -12,117 +12,241 @@ const client =
   );
 
 export const googleLogin =
-  async (req, res) => {
-    try {
+async (req, res) => {
 
-      const { token } =
-        req.body;
+  try {
 
-      if (!token) {
-        return res.status(400).json({
-          message:
-            "Google token missing",
-        });
-      }
+    // =========================
+    // GET TOKEN
+    // =========================
 
-      const ticket =
-        await client.verifyIdToken({
-          idToken: token,
-          audience:
-            process.env
-              .GOOGLE_CLIENT_ID,
-        });
+    const { token } =
+      req.body;
 
-      const payload =
-        ticket.getPayload();
+    if (!token) {
 
-      const {
-        email,
-        name,
-        picture,
-        sub,
-      } = payload;
+      return res.status(400)
+      .json({
 
-      let user =
-        await User.findOne({
-          email,
-        });
+        success: false,
 
-      if (!user) {
-
-        user =
-          await User.create({
-            name,
-            email,
-            profilePic:
-              picture,
-            googleId: sub,
-            authProvider:
-              "google",
-            isVerified: true,
-
-            level: 1,
-            xpPoints: 0,
-            streakDays: 1,
-            subjects: [],
-          });
-
-      } else {
-
-        if (!user.googleId) {
-          user.googleId = sub;
-        }
-
-        await user.save();
-      }
-
-      // IMPORTANT FIX
-      const jwtToken =
-        generateJWT(
-          user._id
-        );
-
-      return res.status(200).json({
         message:
-          "Google login successful",
-
-        token:
-          jwtToken,
-
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          level:
-            user.level || 1,
-          xpPoints:
-            user.xpPoints || 0,
-          streakDays:
-            user.streakDays || 0,
-          subjects:
-            user.subjects || [],
-          isVerified: true,
-          profilePic:
-            user.profilePic,
-        },
-      });
-
-    } catch (error) {
-
-      console.error(
-        "Google auth error:",
-        error
-      );
-
-      return res.status(500).json({
-        message:
-          "Google authentication failed",
-        error:
-          error.message,
+          "Google token missing"
       });
     }
-  };
+
+    // =========================
+    // VERIFY GOOGLE TOKEN
+    // =========================
+
+    const ticket =
+      await client.verifyIdToken({
+
+        idToken:
+          token,
+
+        audience:
+          process.env
+            .GOOGLE_CLIENT_ID
+      });
+
+    const payload =
+      ticket.getPayload();
+
+    const {
+      email,
+      name,
+      picture,
+      sub
+    } = payload;
+
+    // =========================
+    // CHECK USER
+    // =========================
+
+    let user =
+      await User.findOne({
+        email
+      });
+
+    // =========================
+    // CREATE USER
+    // =========================
+
+    if (!user) {
+
+      user =
+        await User.create({
+
+          // BASIC INFO
+
+          name,
+
+          email,
+
+          // REQUIRED FIELDS
+
+          password:
+            "google-auth-user",
+
+          educationType:
+            "college",
+
+          educationLevel:
+            "Not Specified",
+
+          // GOOGLE AUTH
+
+          googleId:
+            sub,
+
+          authProvider:
+            "google",
+
+          profilePic:
+            picture,
+
+          isVerified:
+            true,
+
+          // DEFAULT USER DATA
+
+          role:
+            "student",
+
+          level:
+            1,
+
+          xpPoints:
+            0,
+
+          streakDays:
+            1,
+
+          subjects:
+            [],
+
+          badges:
+            [],
+
+          recommendedTopics:
+            [],
+
+          weakTopics:
+            [],
+
+          studyPlans:
+            [],
+
+          longTermPlans:
+            [],
+
+          dailyMissions:
+            []
+        });
+
+    } else {
+
+      // =========================
+      // UPDATE EXISTING USER
+      // =========================
+
+      if (!user.googleId) {
+
+        user.googleId =
+          sub;
+      }
+
+      user.profilePic =
+        picture;
+
+      user.isVerified =
+        true;
+
+      await user.save();
+    }
+
+    // =========================
+    // GENERATE JWT
+    // =========================
+
+    const jwtToken =
+      generateJWT(
+        user._id
+      );
+
+    // =========================
+    // RESPONSE
+    // =========================
+
+    return res.status(200)
+    .json({
+
+      success: true,
+
+      message:
+        "Google login successful",
+
+      token:
+        jwtToken,
+
+      user: {
+
+        id:
+          user._id,
+
+        name:
+          user.name,
+
+        email:
+          user.email,
+
+        role:
+          user.role,
+
+        level:
+          user.level || 1,
+
+        xpPoints:
+          user.xpPoints || 0,
+
+        streakDays:
+          user.streakDays || 0,
+
+        subjects:
+          user.subjects || [],
+
+        badges:
+          user.badges || [],
+
+        isVerified:
+          true,
+
+        profilePic:
+          user.profilePic
+      }
+    });
+
+  } catch (error) {
+
+    console.error(
+      "Google auth error:",
+      error
+    );
+
+    return res.status(500)
+    .json({
+
+      success: false,
+
+      message:
+        "Google authentication failed",
+
+      error:
+        error.message
+    });
+  }
+};
 
 /**
  * Generate JWT token

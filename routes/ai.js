@@ -29,6 +29,10 @@ import {
 
   getStudyPlans,
 
+  getAllPlans,
+
+  getLatestPlans,
+
   completeStudyDay,
 
   getTodayPlan,
@@ -85,6 +89,20 @@ router.get(
   authenticate,
   aiLimiter,
   getStudyPlans
+);
+
+router.get(
+  "/all-plans",
+  authenticate,
+  
+  getAllPlans
+);
+
+router.get(
+  "/latest-plans",
+  authenticate,
+ 
+  getLatestPlans
 );
 
 router.get(

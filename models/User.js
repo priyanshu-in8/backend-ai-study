@@ -1,6 +1,39 @@
 import mongoose from "mongoose";
 import bcryptjs from "bcryptjs";
 
+const shortTermPlanSchema = new mongoose.Schema({
+
+  title: String,
+
+  goal: String,
+
+  level: Number,
+
+  duration: String,
+
+  topics: [
+    {
+      day: Number,
+
+      topic: String,
+
+      completed: {
+        type: Boolean,
+        default: false
+      }
+    }
+  ],
+
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+
+}, {
+  _id: false
+});
+
+
 
 const studyPlanSchema =
 new mongoose.Schema({
@@ -131,21 +164,12 @@ new mongoose.Schema(
   },
 
   password: {
-    type: String,
-    required: true,
-    minlength: 6,
-    select: false
-  },
+  type: String,
+  minlength: 6,
+  select: false,
+  default: null
+},
 
-  role: {
-    type: String,
-    enum: [
-      "student",
-      "teacher",
-      "admin"
-    ],
-    default: "student"
-  },
 
   isVerified: {
     type: Boolean,
@@ -163,19 +187,20 @@ new mongoose.Schema(
   },
 
   // Education
-  educationType: {
+ role: {
     type: String,
     enum: [
-      "school",
-      "college"
+      "student",
+      "teacher",
+      "admin"
     ],
-    required: true
+    default: "student"
   },
 
-  educationLevel: {
-    type: String,
-    required: true
-  },
+educationLevel: {
+  type: String,
+  default: "Not Specified"
+},
 
   subjects: [String],
 
@@ -216,7 +241,7 @@ weakTopics: [
 // =====================
 currentCode:[currentProblemSchema],
 studyPlans: [
-  studyPlanSchema
+   shortTermPlanSchema
 ],
 
 // =====================

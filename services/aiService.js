@@ -1031,19 +1031,49 @@ JSON format:
 
 export const generateShortTermPlan = async (
   goal,
-  days ,
+  totalDays,
   level = "beginner"
 ) => {
 
-  console.log("Generating short-term plan with:", { goal, days, level });
+  totalDays = Number(totalDays);
 
   try {
 
-    const prompt = `
+    const chunkSize = 7;
+
+    let allTopics = [];
+
+    const sleep = (ms) =>
+      new Promise(resolve =>
+        setTimeout(resolve, ms)
+      );
+
+    // =========================
+    // CHUNK GENERATION
+    // =========================
+
+    for (
+      let startDay = 1;
+      startDay <= totalDays;
+      startDay += chunkSize
+    ) {
+
+      const endDay =
+        Math.min(
+          startDay +
+          chunkSize - 1,
+          totalDays
+        );
+
+      console.log(
+        `Generating short-term chunk ${startDay}-${endDay}`
+      );
+
+      const prompt = `
 You are an expert AI study roadmap planner.
 
 TASK:
-Generate a short-term study roadmap.
+Generate study topics.
 
 GOAL:
 ${goal}
@@ -1051,119 +1081,183 @@ ${goal}
 LEVEL:
 ${level}
 
-DURATION:
-${days} days
+Generate ONLY days
+${startDay} to ${endDay}
 
-IMPORTANT RULES:
-- Return ONLY valid JSON
+IMPORTANT:
+- Return STRICTLY valid JSON
 - No markdown
 - No explanations
+- No comments
 - No trailing commas
-- Keep response compact
+- Ensure every array item is comma separated
 - One topic per day
-- Topics should follow proper learning sequence
-- Beginner topics first
-- Topic names should be descriptive and beginner-friendly
-- Mention concept + practical focus
-- Ensure complete parsable JSON
+- Beginner-friendly sequence
 
 RETURN FORMAT:
 
 {
-  "title": "",
-  "goal": "",
-  "level": "",
-  "duration": "${days} days",
   "topics": [
     {
       "day": 1,
-      "topic": ""
+      "topic": "",
+      "completed": false
     }
   ]
 }
 `;
 
-    const response =
-      await generateResponse([
-        {
-          role: "user",
-          content: prompt,
-        },
-      ]);
+      let response;
 
-    console.log(
-      "RAW SHORT-TERM RESPONSE:"
-    );
+      try {
 
-    console.log(response);
+        response =
+          await generateResponse([
+            {
+              role: "user",
+              content: prompt,
+            },
+          ]);
 
-    let cleaned = response
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .replace(/,\s*([}\]])/g, "$1")
-      .trim();
+      } catch (error) {
 
-    const start =
-      cleaned.indexOf("{");
+        if (
+          error.message.includes("429")
+        ) {
 
-    const end =
-      cleaned.lastIndexOf("}");
+          console.log(
+            "Rate limited. Retrying..."
+          );
 
-    if (
-      start === -1 ||
-      end === -1
-    ) {
+          await sleep(7000);
 
-      throw new Error(
-        "Invalid JSON structure"
-      );
+          response =
+            await generateResponse([
+              {
+                role: "user",
+                content: prompt,
+              },
+            ]);
+
+        } else {
+
+          throw error;
+        }
+      }
+
+      // =========================
+      // CLEAN RESPONSE
+      // =========================
+
+      let cleaned = response
+        .replace(/```json/gi, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const start =
+        cleaned.indexOf("{");
+
+      const end =
+        cleaned.lastIndexOf("}");
+
+      if (
+        start === -1 ||
+        end === -1
+      ) {
+
+        console.log(
+          "INVALID CHUNK JSON"
+        );
+
+        continue;
+      }
+
+      cleaned =
+        cleaned.slice(
+          start,
+          end + 1
+        );
+
+      cleaned = cleaned
+        .replace(/\n/g, "")
+        .replace(/\r/g, "")
+        .trim();
+
+      let parsed;
+
+      try {
+
+        parsed =
+          JSON.parse(cleaned);
+
+      } catch (jsonError) {
+
+        console.log(
+          "FAILED PARSE FOR CHUNK"
+        );
+
+        continue;
+      }
+
+      if (
+        parsed.topics &&
+        Array.isArray(
+          parsed.topics
+        )
+      ) {
+
+        allTopics = [
+          ...allTopics,
+          ...parsed.topics
+        ];
+      }
+
+      // delay after chunk
+
+      await sleep(2000);
     }
 
-    cleaned =
-      cleaned.slice(
-        start,
-        end + 1
-      );
+    // =========================
+    // NORMALIZE
+    // =========================
 
-    cleaned = cleaned
-      .replace(/\n/g, "")
-      .replace(/\r/g, "")
-      .trim();
-
-    console.log(
-      "CLEANED SHORT-TERM JSON:"
-    );
-
-    console.log(cleaned);
-
-    const parsed =
-      JSON.parse(cleaned);
-
-    // Validation
-
-    if (
-      !parsed.topics ||
-      !Array.isArray(parsed.topics)
-    ) {
-
-      throw new Error(
-        "Topics array missing"
-      );
-    }
-
-    // Ensure proper structure
-
-    parsed.topics =
-      parsed.topics.map(
+    allTopics =
+      allTopics.map(
         (item, index) => ({
-          day: index + 1,
+
+          day:
+            item.day ||
+            index + 1,
+
           topic:
             item.topic ||
-            "General Practice"
+            "General Practice",
+
+          completed:
+            item.completed ??
+            false
         })
       );
 
-    return parsed;
+    // =========================
+    // FINAL RESPONSE
+    // =========================
+
+    return {
+
+      title:
+        `${goal} Roadmap`,
+
+      goal,
+
+      level,
+
+      duration:
+        `${totalDays} days`,
+
+      topics:
+        allTopics
+    };
 
   } catch (error) {
 
@@ -1179,15 +1273,33 @@ RETURN FORMAT:
 };
 export const generateLongTermPlan = async (
   goal,
-  totalDays ,
+  totalDays,
   level = "beginner"
 ) => {
 
+  totalDays = Number(totalDays);
+
   try {
 
-    const chunkSize = 10;
+    // =========================
+    // SETTINGS
+    // =========================
+
+    const chunkSize =
+      totalDays > 180
+        ? 20
+        : 15;
 
     let allDays = [];
+
+    // =========================
+    // SLEEP FUNCTION
+    // =========================
+
+    const sleep = (ms) =>
+      new Promise(resolve =>
+        setTimeout(resolve, ms)
+      );
 
     // =========================
     // GENERATE DAY TOPICS
@@ -1206,6 +1318,10 @@ export const generateLongTermPlan = async (
           totalDays
         );
 
+      console.log(
+        `Generating chunk ${startDay}-${endDay}`
+      );
+
       const prompt = `
 You are an expert AI roadmap planner.
 
@@ -1222,41 +1338,77 @@ Generate ONLY days
 ${startDay} to ${endDay}
 
 IMPORTANT:
-- Return ONLY valid JSON
+- Return STRICTLY valid JSON
 - No markdown
 - No explanations
+- No comments
+- No trailing commas
 - One topic per day
 - Beginner-friendly order
-- Topic names should be descriptive
-- Ensure valid JSON
+- Topic names should be short and descriptive
 
 RETURN FORMAT:
 
 {
   "days": [
     {
-      "day": ${startDay},
-      "topic": ""
+      "day": 1,
+      "topic": "",
+      "completed": false
     }
   ]
 }
 `;
 
-      const response =
-        await generateResponse([
-          {
-            role: "user",
-            content: prompt,
-          },
-        ]);
+      let response;
+
+      // =========================
+      // RETRY LOGIC
+      // =========================
+
+      try {
+
+        response =
+          await generateResponse([
+            {
+              role: "user",
+              content: prompt,
+            },
+          ]);
+
+      } catch (error) {
+
+        if (
+          error.message.includes("429")
+        ) {
+
+          console.log(
+            `Rate limited for chunk ${startDay}-${endDay}`
+          );
+
+          await sleep(8000);
+
+          response =
+            await generateResponse([
+              {
+                role: "user",
+                content: prompt,
+              },
+            ]);
+
+        } else {
+
+          throw error;
+        }
+      }
+
+      // =========================
+      // CLEAN RESPONSE
+      // =========================
 
       let cleaned = response
         .replace(/```json/gi, "")
         .replace(/```/g, "")
-        .replace(
-          /,\s*([}\]])/g,
-          "$1"
-        )
         .trim();
 
       const start =
@@ -1281,8 +1433,63 @@ RETURN FORMAT:
           end + 1
         );
 
-      const parsed =
-        JSON.parse(cleaned);
+      // =========================
+      // SAFE JSON PARSE
+      // =========================
+
+      let parsed;
+
+      try {
+
+        parsed =
+          JSON.parse(cleaned);
+
+      } catch (jsonError) {
+
+        console.log(
+          "INVALID JSON RECEIVED"
+        );
+
+        console.log(cleaned);
+
+        try {
+
+          cleaned = cleaned
+
+            // remove trailing commas
+            .replace(
+              /,\s*([}\]])/g,
+              "$1"
+            )
+
+            // fix missing commas
+            .replace(
+              /}\s*{/g,
+              "},{"
+            )
+
+            // remove line breaks
+            .replace(
+              /\n/g,
+              ""
+            );
+
+          parsed =
+            JSON.parse(cleaned);
+
+        } catch (retryError) {
+
+          console.log(
+            "FAILED TO FIX JSON"
+          );
+
+          continue;
+        }
+      }
+
+      // =========================
+      // SAVE DAYS
+      // =========================
 
       if (
         parsed.days &&
@@ -1296,6 +1503,12 @@ RETURN FORMAT:
           ...parsed.days
         ];
       }
+
+      // =========================
+      // DELAY AFTER EACH CHUNK
+      // =========================
+
+      await sleep(2500);
     }
 
     // =========================
@@ -1317,7 +1530,9 @@ RETURN FORMAT:
       const monthTopics =
         [];
 
-      // 4 weeks per month
+      // =========================
+      // 4 WEEKS PER MONTH
+      // =========================
 
       for (
         let w = 0;
@@ -1332,7 +1547,9 @@ RETURN FORMAT:
         const weekTopics =
           [];
 
-        // 7 days per week
+        // =========================
+        // 7 DAYS PER WEEK
+        // =========================
 
         for (
           let d = 0;
@@ -1347,9 +1564,18 @@ RETURN FORMAT:
               dayIndex
             ];
 
-          weekDays.push(
-            currentDay
-          );
+          weekDays.push({
+
+            day:
+              currentDay.day,
+
+            topic:
+              currentDay.topic,
+
+            completed:
+              currentDay.completed ??
+              false
+          });
 
           weekTopics.push(
             currentDay.topic
@@ -1362,7 +1588,9 @@ RETURN FORMAT:
           dayIndex++;
         }
 
-        // Remove duplicates
+        // =========================
+        // REMOVE DUPLICATES
+        // =========================
 
         const uniqueWeekTopics =
           [
@@ -1391,11 +1619,14 @@ RETURN FORMAT:
           milestone:
             `Complete practice and revision for ${uniqueWeekTopics.length} topics.`,
 
-          days: weekDays
+          days:
+            weekDays
         });
       }
 
-      // Remove duplicates
+      // =========================
+      // REMOVE DUPLICATES
+      // =========================
 
       const uniqueTopics =
         [
@@ -1431,6 +1662,10 @@ RETURN FORMAT:
 
       currentMonth++;
     }
+
+    // =========================
+    // FINAL RESPONSE
+    // =========================
 
     return {
 
