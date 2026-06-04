@@ -9,12 +9,14 @@ import {
   generateStudyNotes,
   generateAIStudyPlan,
   generateShortTermPlan,
-  generateLongTermPlan
- 
+  generateLongTermPlan,
+  generateTodayAIPlan
+
 } from '../services/aiService.js';
 import User from "../models/User.js";
 import codeExecutor from '../utils/codeExecutor.js';
 import { studyPlanSchema } from "../validators/studyPlan.validator.js";
+import { fi } from 'zod/v4/locales';
 
 
 export const recommendQuiz = async (req, res) => {
@@ -115,150 +117,650 @@ export const completeStudyDay = async (req, res) => {
   }
 };
 
-export const generateStudyPlan = async (req, res) => {
+
+
+export const generateStudyPlan =
+  async (req, res) => {
+
+    try {
+
+      // =========================
+      // FIND USER
+      // =========================
+
+      const user =
+        await User.findById(
+          req.user.userId
+        );
+
+      if (!user) {
+
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      // =========================
+      // CURRENT SHORT TERM DAY
+      // =========================
+
+      const shortCreatedAt =
+        user.studyPlans?.[0]
+          ?.createdAt;
+
+      let days = 0;
+
+      if (shortCreatedAt) {
+
+        const diffMs =
+          Date.now() -
+          new Date(
+            shortCreatedAt
+          ).getTime();
+
+        days = Math.floor(
+          diffMs /
+          (1000 * 60 * 60 * 24)
+        );
+      }
+
+      console.log(
+        "SHORT DAYS:",
+        days
+      );
+
+      // =========================
+      // SHORT TERM TOPIC
+      // =========================
+
+      const shortTermTopic =
+        user.studyPlans?.[0]
+          ?.topics?.[days]
+          ?.topic ||
+        "General Study";
+
+      console.log(
+        `SHORT TERM TOPIC ${days}:`,
+        shortTermTopic
+      );
+
+      // =========================
+      // SHORT GOAL
+      // =========================
+
+      const shortGoal =
+        user.studyPlans?.[0]
+          ?.goal ||
+        "No Goal";
+
+      console.log(
+        "SHORT GOAL:",
+        shortGoal
+      );
+
+      // =========================
+      // USER LEVEL
+      // =========================
+
+      const level =
+        user.educationLevel ||
+        "beginner";
+
+      console.log(
+        "LEVEL:",
+        level
+      );
+
+      // =========================
+      // LONG TERM DAY ANALYSIS
+      // =========================
+
+      const longCreatedAt =
+        user.longTermPlans?.[0]
+          ?.createdAt;
+
+      let ldays = 0;
+
+      if (longCreatedAt) {
+
+        const diffMs =
+          Date.now() -
+          new Date(
+            longCreatedAt
+          ).getTime();
+
+        ldays = Math.floor(
+          diffMs /
+          (1000 * 60 * 60 * 24)
+        );
+      }
+
+      console.log(
+        "LONG DAYS:",
+        ldays
+      );
+
+      // =========================
+      // MONTH / WEEK / DAY
+      // =========================
+
+      const lmonths =
+        Math.floor(
+          ldays / 30
+        );
+
+      const lweeks =
+        Math.floor(
+          (ldays % 30) / 7
+        );
+
+      const finalDays =
+        ldays % 7;
+
+      console.log({
+        lmonths,
+        lweeks,
+        finalDays,
+      });
+
+      // =========================
+      // LONG TERM PLAN
+      // =========================
+
+      const longTermPlan =
+        user.longTermPlans?.[0]
+          ?.goal ||
+        "No Long Goal";
+
+      console.log(
+        "LONG TERM PLAN:",
+        longTermPlan
+      );
+
+      // =========================
+      // LONG TERM TOPIC
+      // =========================
+
+      const longTermTopic =
+        user.longTermPlans?.[0]
+          ?.roadmap?.months?.[
+            lmonths
+          ]?.weeks?.[
+            lweeks
+          ]?.days?.[
+            finalDays
+          ]?.topic ||
+        "Revision";
+
+      console.log(
+        "LONG TERM TOPIC:",
+        longTermTopic
+      );
+
+      // =========================
+      // WEAK TOPIC
+      // =========================
+
+      const weakTopic =
+        user.weakTopics?.[0]?.topic ||
+        "General";
+
+      console.log(
+        "WEAK TOPIC:",
+        weakTopic
+      );
+
+      // =========================
+      // HOURS PER DAY
+      // =========================
+
+      const hoursPerDay = 2;
+
+      // =========================
+      // INCOMPLETE TASKS
+      // =========================
+
+      const incompleteTasks =
+        (user.practiceHistory || [])
+          .filter(p => p.accuracy < 60)
+          .slice(0, 3)
+          .map(p => p.topic)
+          .join(", ") || "None";
+
+      console.log(
+        "INCOMPLETE TASKS:",
+        incompleteTasks
+      );
+
+      // =========================
+      // GENERATE TODAY AI PLAN
+      // =========================
+
+      const plan =
+        await generateTodayAIPlan({
+
+          shortTermTopic,
+
+          longTermTopic,
+
+          weakTopic,
+
+          currentDay:
+            days + 1,
+
+          level,
+
+          shortGoal,
+
+          hoursPerDay,
+
+          incompleteTasks,
+        });
+
+      console.log(
+        "GENERATED PLAN:",
+        plan
+      );
+
+      // =========================
+      // VALIDATION
+      // =========================
+
+      if (
+        !plan ||
+        !plan.success ||
+        !plan.data
+      ) {
+
+        return res.status(500).json({
+          success: false,
+          message:
+            "AI failed to generate plan",
+        });
+      }
+
+      // =========================
+      // SAVE TODAY PLAN
+      // =========================
+
+      if (!user.todayPlans) {
+
+        user.todayPlans = [];
+      }
+
+      user.todayPlans.unshift(
+        plan.data
+      );
+
+      await user.save();
+      console.log("Today's plan saved successfully");
+
+      // =========================
+      // RESPONSE
+      // =========================
+
+      return res.status(200).json({
+
+        success: true,
+
+        message:
+          "Today's AI plan generated successfully",
+
+        data:
+          plan.data,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Generate study plan error:",
+        error
+      );
+
+      return res.status(500).json({
+
+        success: false,
+
+        message:
+          error.message ||
+          "Internal server error",
+      });
+    }
+  };
+
+
+
+
+
+/**
+ * Get today's adaptive study plan
+ * Analyzes long-term, short-term, weak topics, and incomplete tasks
+ * Returns exactly 5 activities with proper distribution
+ */
+export const getTodayPlan = async (req, res) => {
   try {
-    const {
-      goal,
-      days ,
-      hoursPerDay = 2,
-      level = "beginner"
-    } = req.body;
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    if (!user.studyPlans || user.studyPlans.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No study plan found"
+      });
+    }
+
+    // Get latest plans
+    const shortTermPlan = user.studyPlans[0];
+    const longTermPlan = user.longTermPlans?.[0];
+
+    // Calculate current day
+    const createdAt = new Date(shortTermPlan.createdAt || Date.now());
+    const today = new Date();
+    const daysDiff = Math.floor((today - createdAt) / (1000 * 60 * 60 * 24));
+    const currentDay = daysDiff + 1;
+
+    // Extract topics from plans
+    let shortTermTopic = "General";
+    let longTermTopic = "General";
+
+    if (shortTermPlan.roadmap?.months?.[0]?.weeks?.[0]?.days?.[0]) {
+      shortTermTopic = shortTermPlan.roadmap.months[0].weeks[0].days[0].topic;
+    }
+
+    if (longTermPlan?.roadmap?.months?.[0]?.weeks?.[0]?.days?.[0]) {
+      longTermTopic = longTermPlan.roadmap.months[0].weeks[0].days[0].topic;
+    }
+
+    // Get weak topics
+    const weakTopics = (user.weakTopics || [])
+      .sort((a, b) => b.wrongCount - a.wrongCount)
+      .slice(0, 3)
+      .map(wt => wt.topic);
+
+    // Get incomplete tasks from practice history
+    const incompleteTasks = (user.practiceHistory || [])
+      .filter(p => p.accuracy < 60)
+      .slice(0, 3)
+      .map(p => p.topic);
+
+    const level = user.educationLevel || "beginner";
+    const hoursPerDay = 2;
+
+    // Generate focus area
+    let focusArea = shortTermTopic;
+    if (weakTopics.length > 0) {
+      focusArea = `${shortTermTopic} + ${weakTopics[0]} revision`;
+    }
+
+    // Generate 5 activities with proper distribution
+    const activities = [];
+    let activityId = 1;
+
+    // Activity 1: Weak Topic Quiz (if weak topics exist)
+    if (weakTopics.length > 0) {
+      activities.push({
+        id: String(activityId++),
+        type: "quiz",
+        title: `${weakTopics[0]} Revision Quiz`,
+        description: "Revisit your weak topic with a focused quiz",
+        completed: false,
+        duration: "20 mins",
+        xp: 100
+      });
+    } else {
+      activities.push({
+        id: String(activityId++),
+        type: "quiz",
+        title: `${shortTermTopic} Concept Quiz`,
+        description: "Test your understanding of today's concept",
+        completed: false,
+        duration: "20 mins",
+        xp: 100
+      });
+    }
+
+    // Activity 2: Practical Coding/Problem Solving
+    activities.push({
+      id: String(activityId++),
+      type: "coding",
+      title: `${shortTermTopic} Practice Problem`,
+      description: "Solve a practical coding problem on today's topic",
+      completed: false,
+      difficulty: level,
+      duration: "40 mins",
+      xp: 150
+    });
+
+    // Activity 3: Study Notes / Flashcards
+    activities.push({
+      id: String(activityId++),
+      type: "flashcard",
+      title: `${shortTermTopic} Key Concepts`,
+      description: "Review important definitions and concepts",
+      completed: false,
+      duration: "15 mins",
+      xp: 75
+    });
+
+    // Activity 4: Revision / Long-term Goal Connection
+    activities.push({
+      id: String(activityId++),
+      type: "revision",
+      title: `${longTermTopic} Progress Check`,
+      description: "Review progress on your long-term learning goal",
+      completed: false,
+      duration: "15 mins",
+      xp: 75
+    });
+
+    // Activity 5: Focus Session / Deep Work
+    activities.push({
+      id: String(activityId++),
+      type: "focus",
+      title: "Deep Work Session",
+      description: "Focused learning on the most challenging concept today",
+      completed: false,
+      duration: `${hoursPerDay * 60} mins`,
+      xp: 200
+    });
+
+    const todayPlan = {
+      day: currentDay,
+      date: today.toISOString().split('T')[0],
+      focusArea,
+      level,
+      hoursPerDay,
+      shortTermTopic,
+      longTermTopic,
+      weakTopics,
+      activities,
+      totalXP: activities.reduce((sum, a) => sum + (a.xp || 0), 0),
+      estimatedDuration: activities.reduce((sum, a) => {
+        const mins = parseInt(a.duration) || 0;
+        return sum + mins;
+      }, 0),
+      completedActivities: 0,
+      createdAt: new Date()
+    };
+
+    // Save daily plan to database
+    user.dailyPlan = todayPlan;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Today's adaptive study plan generated and saved",
+      data: todayPlan
+    });
+
+  } catch (error) {
+    console.error("Error generating today's plan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate today's plan",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Complete an activity in today's plan
+ * When all activities are completed, regenerate a new daily plan
+ */
+export const completeActivity = async (req, res) => {
+  try {
+    const { activityId } = req.body;
+
+    if (!activityId) {
+      return res.status(400).json({
+        success: false,
+        message: "Activity ID is required"
+      });
+    }
 
     const user = await User.findById(req.user.userId);
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         message: "User not found"
       });
     }
 
-    const plan = await generateAIStudyPlan(
-      goal,
-      days,
-      hoursPerDay,
-      level
+    if (!user.dailyPlan) {
+      return res.status(404).json({
+        success: false,
+        message: "No daily plan found"
+      });
+    }
+
+    // Find and complete the activity
+    const activity = user.dailyPlan.activities.find(
+      a => a.id === String(activityId)
     );
 
-    user.studyPlans.unshift({
-      title: plan.title,
-      goal,
-      days: plan.days
-    });
+    if (!activity) {
+      return res.status(404).json({
+        success: false,
+        message: "Activity not found"
+      });
+    }
+
+    if (activity.completed) {
+      return res.status(400).json({
+        success: false,
+        message: "Activity already completed"
+      });
+    }
+
+    // Mark activity as completed
+    activity.completed = true;
+    user.dailyPlan.completedActivities =
+      (user.dailyPlan.completedActivities || 0) + 1;
+
+    // Award XP
+    user.xpPoints = (user.xpPoints || 0) + (activity.xp || 0);
+
+    // Check if all activities are completed
+    const allCompleted = user.dailyPlan.activities.every(a => a.completed);
 
     await user.save();
 
-    res.status(200).json({
-      message: "Study plan generated and saved",
-      data: plan
-    });
+    const response = {
+      success: true,
+      message: "Activity completed successfully",
+      data: {
+        activityId,
+        activity,
+        completedActivities: user.dailyPlan.completedActivities,
+        totalActivities: user.dailyPlan.activities.length,
+        xpEarned: activity.xp || 0,
+        totalXP: user.xpPoints,
+        allCompleted
+      }
+    };
+
+    // If all activities completed, regenerate new daily plan
+    if (allCompleted) {
+      response.message =
+        "All activities completed! New plan will be generated.";
+
+      // Trigger plan regeneration
+      setTimeout(() => {
+        // This will be handled by the next getTodayPlan call
+        console.log(
+          `Auto-regenerating daily plan for user ${req.user.userId}`
+        );
+      }, 1000);
+    }
+
+    return res.status(200).json(response);
 
   } catch (error) {
-    res.status(500).json({
-      message: error.message
+    console.error("Error completing activity:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to complete activity",
+      error: error.message
     });
   }
 };
 
-export const getTodayPlan = async (req, res) => {
+/**
+ * Get today's saved daily plan
+ * Returns the saved daily plan without regenerating
+ */
+export const getSavedTodayPlan = async (req, res) => {
   try {
+    const user = await User.findById(req.user.userId);
 
-    const user =
-      await User.findById(
-        req.user.userId
-      );
-
-    if (
-      !user ||
-      user.studyPlans.length === 0
-    ) {
+    if (!user) {
       return res.status(404).json({
-        message: "No study plan found"
+        success: false,
+        message: "User not found"
       });
     }
 
-    const latestPlan =
-      user.studyPlans[0];
-
-    const roadmap =
-      latestPlan.roadmap;
-
-    if (
-      !roadmap ||
-      !roadmap.months
-    ) {
+    if (!user.dailyPlan) {
       return res.status(404).json({
-        message: "Roadmap data missing"
+        success: false,
+        message: "No daily plan saved yet"
       });
     }
 
-    let todayTask = null;
+    // Check if plan is from today
+    const savedDate = new Date(user.dailyPlan.date).toDateString();
+    const today = new Date().toDateString();
 
-    for (const month of roadmap.months) {
-
-      for (const week of month.weeks) {
-
-        const pendingDay =
-          week.days.find(
-            day => !day.completed
-          );
-
-        if (pendingDay) {
-
-          todayTask = {
-
-            month:
-              month.month,
-
-            week:
-              week.week,
-
-            day:
-              pendingDay.day,
-
-            topic:
-              pendingDay.topic,
-
-            focus:
-              week.focus,
-
-            milestone:
-              week.milestone
-          };
-
-          break;
-        }
-      }
-
-      if (todayTask) break;
-    }
-
-    if (!todayTask) {
-
+    if (savedDate !== today) {
       return res.status(200).json({
-
-        message:
-          "Plan completed",
-
-        data: null
+        success: true,
+        message: "Daily plan from previous day",
+        data: user.dailyPlan,
+        isExpired: true
       });
     }
 
     return res.status(200).json({
-
-      message:
-        "Today's task",
-
-      data: todayTask
+      success: true,
+      message: "Today's saved daily plan retrieved",
+      data: user.dailyPlan,
+      isExpired: false
     });
 
   } catch (error) {
-
-    console.log(error);
-
+    console.error("Error retrieving saved plan:", error);
     return res.status(500).json({
-
-      message:
-        "Failed to load today's task"
+      success: false,
+      message: "Failed to retrieve saved plan",
+      error: error.message
     });
   }
 };
@@ -274,7 +776,7 @@ export const getStudyPlans = async (req, res) => {
       // Handle new roadmap format (with months/weeks/days)
       if (plan.roadmap && plan.roadmap.months) {
         const allDays = [];
-        
+
         for (const month of plan.roadmap.months) {
           for (const week of month.weeks) {
             for (const day of week.days) {
@@ -282,10 +784,10 @@ export const getStudyPlans = async (req, res) => {
             }
           }
         }
-        
+
         totalDays = allDays.length;
         completedDays = allDays.filter(d => d.completed).length;
-      } 
+      }
       // Handle old format (with days array directly)
       else if (plan.days && Array.isArray(plan.days)) {
         totalDays = plan.days.length;
@@ -334,7 +836,7 @@ export const getAllPlans = async (req, res) => {
 
       if (plan.roadmap && plan.roadmap.months) {
         const allDays = [];
-        
+
         for (const month of plan.roadmap.months) {
           for (const week of month.weeks) {
             for (const day of week.days) {
@@ -342,10 +844,10 @@ export const getAllPlans = async (req, res) => {
             }
           }
         }
-        
+
         totalDays = allDays.length;
         completedDays = allDays.filter(d => d.completed).length;
-      } 
+      }
       else if (plan.days && Array.isArray(plan.days)) {
         totalDays = plan.days.length;
         completedDays = plan.days.filter(d => d.completed).length;
@@ -417,7 +919,7 @@ export const getLatestPlans = async (req, res) => {
 
       if (plan.roadmap && plan.roadmap.months) {
         const allDays = [];
-        
+
         for (const month of plan.roadmap.months) {
           for (const week of month.weeks) {
             for (const day of week.days) {
@@ -425,10 +927,10 @@ export const getLatestPlans = async (req, res) => {
             }
           }
         }
-        
+
         totalDays = allDays.length;
         completedDays = allDays.filter(d => d.completed).length;
-      } 
+      }
       else if (plan.days && Array.isArray(plan.days)) {
         totalDays = plan.days.length;
         completedDays = plan.days.filter(d => d.completed).length;
@@ -656,7 +1158,7 @@ export const summarize = async (req, res) => {
     // Style validation
     if (
       !["short", "medium", "detailed"]
-      .includes(style)
+        .includes(style)
     ) {
 
       return res.status(400).json({
@@ -783,7 +1285,7 @@ export const generateCodingProblemEndpoint = async (req, res) => {
 
     if (
       !["easy", "medium", "hard"]
-      .includes(difficulty)
+        .includes(difficulty)
     ) {
 
       return res.status(400).json({
@@ -906,7 +1408,7 @@ export const generateCodingProblemEndpoint = async (req, res) => {
 
     const latestPlan =
       user.studyPlans[
-        user.studyPlans.length - 1
+      user.studyPlans.length - 1
       ];
 
     latestPlan.current = [
@@ -956,213 +1458,213 @@ export const generateCodingProblemEndpoint = async (req, res) => {
  * Evaluate submitted coding solution
  */
 export const evaluateCodingSolutionEndpoint =
-async (req, res) => {
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      code,
-      language = "cpp"
-    } = req.body;
-
-    // Validation
-    if (
-      !code ||
-      code.trim() === ""
-    ) {
-
-      return res.status(400).json({
-
-        message:
-          "Solution code is required"
-      });
-    }
-
-    // Get user
-    const user =
-      await User.findById(
-        req.user.userId
-      );
-
-    if (!user) {
-
-      return res.status(404).json({
-        message: "User not found"
-      });
-    }
-
-    // Check study plans
-    if (
-      !user.studyPlans ||
-      user.studyPlans.length === 0
-    ) {
-
-      return res.status(404).json({
-        message:
-          "No coding problem found"
-      });
-    }
-
-    // Latest study plan
-    const latestPlan =
-      user.studyPlans[
-        user.studyPlans.length - 1
-      ];
-
-    // Current problem
-    const currentProblem =
-      latestPlan.current?.[0];
-
-    if (!currentProblem) {
-
-      return res.status(404).json({
-        message:
-          "Current problem not found"
-      });
-    }
-
-    // DB testcases
-    const testCases =
-      currentProblem.testCases || [];
-      console.log(
-  "DB TESTCASES:",
-  JSON.stringify(
-    testCases,
-    null,
-    2
-  )
-);
-
-    // Run code
-    const executionResult =
-      await codeExecutor.runTestCases(
-
+      const {
         code,
+        language = "cpp"
+      } = req.body;
 
-        language,
+      // Validation
+      if (
+        !code ||
+        code.trim() === ""
+      ) {
 
-        testCases
+        return res.status(400).json({
+
+          message:
+            "Solution code is required"
+        });
+      }
+
+      // Get user
+      const user =
+        await User.findById(
+          req.user.userId
+        );
+
+      if (!user) {
+
+        return res.status(404).json({
+          message: "User not found"
+        });
+      }
+
+      // Check study plans
+      if (
+        !user.studyPlans ||
+        user.studyPlans.length === 0
+      ) {
+
+        return res.status(404).json({
+          message:
+            "No coding problem found"
+        });
+      }
+
+      // Latest study plan
+      const latestPlan =
+        user.studyPlans[
+        user.studyPlans.length - 1
+        ];
+
+      // Current problem
+      const currentProblem =
+        latestPlan.current?.[0];
+
+      if (!currentProblem) {
+
+        return res.status(404).json({
+          message:
+            "Current problem not found"
+        });
+      }
+
+      // DB testcases
+      const testCases =
+        currentProblem.testCases || [];
+      console.log(
+        "DB TESTCASES:",
+        JSON.stringify(
+          testCases,
+          null,
+          2
+        )
       );
 
-    console.log(
-      "Execution Result:",
-      JSON.stringify(
-        executionResult,
-        null,
-        2
-      )
-    );
+      // Run code
+      const executionResult =
+        await codeExecutor.runTestCases(
 
-    const passed =
-      executionResult?.passed ?? 0;
+          code,
 
-    const total =
-      executionResult?.total ??
-      testCases.length;
+          language,
 
-    const score =
-      executionResult?.score ?? 0;
+          testCases
+        );
 
-    const results =
-      executionResult?.testCases ?? [];
+      console.log(
+        "Execution Result:",
+        JSON.stringify(
+          executionResult,
+          null,
+          2
+        )
+      );
 
-    // Final response
-    const evaluation = {
+      const passed =
+        executionResult?.passed ?? 0;
 
-      isCorrect:
-        passed === total &&
-        total > 0,
+      const total =
+        executionResult?.total ??
+        testCases.length;
 
-      score,
+      const score =
+        executionResult?.score ?? 0;
 
-      passed,
+      const results =
+        executionResult?.testCases ?? [];
 
-      total,
+      // Final response
+      const evaluation = {
 
-      results:
-        results.map(tc => ({
+        isCorrect:
+          passed === total &&
+          total > 0,
 
-          input:
-            tc.input,
+        score,
 
-          expected:
-            tc.expected ??
-            tc.expectedOutput ??
-            "",
+        passed,
 
-          actual:
-            tc.actual,
+        total,
 
-          passed:
-            tc.passed,
+        results:
+          results.map(tc => ({
 
-          error:
-            tc.error || null
-        })),
+            input:
+              tc.input,
 
-      issues:
-        results
-          .filter(tc => !tc.passed)
-          .map(tc =>
+            expected:
+              tc.expected ??
+              tc.expectedOutput ??
+              "",
 
-            tc.error
+            actual:
+              tc.actual,
 
-              ? `Error: ${tc.error}`
+            passed:
+              tc.passed,
 
-              : `Expected "${tc.expected}" but got "${tc.actual}"`
-          ),
+            error:
+              tc.error || null
+          })),
 
-      suggestions:
+        issues:
+          results
+            .filter(tc => !tc.passed)
+            .map(tc =>
 
-        passed === total
+              tc.error
 
-          ? [
+                ? `Error: ${tc.error}`
+
+                : `Expected "${tc.expected}" but got "${tc.actual}"`
+            ),
+
+        suggestions:
+
+          passed === total
+
+            ? [
               "Great job! All test cases passed."
             ]
 
-          : [
+            : [
               "Review failing test cases",
               "Check edge cases",
               "Verify input parsing",
               "Check logic carefully"
             ],
 
-      summary:
-        `Passed ${passed}/${total} test cases`
-    };
+        summary:
+          `Passed ${passed}/${total} test cases`
+      };
 
-    console.log(evaluation);
-
-
+      console.log(evaluation);
 
 
 
-    return res.status(200).json({
 
-      message:
-        "Coding solution evaluated successfully",
 
-      data:
-        evaluation
-    });
+      return res.status(200).json({
 
-  } catch (error) {
+        message:
+          "Coding solution evaluated successfully",
 
-    console.error(
-      "Coding evaluation error:",
-      error
-    );
+        data:
+          evaluation
+      });
 
-    return res.status(500).json({
+    } catch (error) {
 
-      message:
-        "Failed to evaluate coding solution",
+      console.error(
+        "Coding evaluation error:",
+        error
+      );
 
-      error:
-        error.message
-    });
-  }
-};
+      return res.status(500).json({
+
+        message:
+          "Failed to evaluate coding solution",
+
+        error:
+          error.message
+      });
+    }
+  };
 
 /**
  * Explain a concept
@@ -1282,419 +1784,419 @@ export const createStudyPlan = async (req, res) => {
 };
 
 export const generateShortTermPlanController =
-async (req, res) => {
+  async (req, res) => {
 
-  try {
+    try {
 
-    const {
-      goal,
-      days,
-      hoursPerDay,
-      level
-    } = req.body;
-
-    const plan =
-      await generateShortTermPlan(
+      const {
         goal,
         days,
         hoursPerDay,
         level
-      );
+      } = req.body;
 
-    const user =
-      await User.findById(
-        req.user.userId
-      );
+      const plan =
+        await generateShortTermPlan(
+          goal,
+          days,
+          hoursPerDay,
+          level
+        );
 
-    if (!user) {
+      const user =
+        await User.findById(
+          req.user.userId
+        );
 
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
+      if (!user) {
 
-    user.studyPlans.unshift(plan);
+        return res.status(404).json({
+          success: false,
+          message: "User not found"
+        });
+      }
 
-    await user.save();
+      user.studyPlans.unshift(plan);
 
-    return res.status(200).json({
+      await user.save();
 
-      success: true,
+      return res.status(200).json({
 
-      data: plan,
+        success: true,
 
-      message:
-        "Short-term plan generated and saved successfully"
-    });
+        data: plan,
 
-  } catch (error) {
-
-    return res.status(500).json({
-
-      success: false,
-
-      message:
-        "Failed to generate short-term plan",
-
-      error:
-        error.message
-    });
-  }
-};
-
-export const generateLongTermPlanController =
-async (req, res) => {
-
-  try {
-
-    const {
-      goal,
-      days,
-      level
-    } = req.body;
-
-    console.log(
-      "Generating long-term plan with:",
-      { goal, days, level }
-    );
-
-    const plan =
-      await generateLongTermPlan(
-        goal,
-        days,
-        level
-      );
-
-    // Save plan to database
-    const user = await User.findById(req.user.userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
-
-    user.longTermPlans.unshift({
-      title: goal,
-      goal: goal,
-      roadmap: plan
-    });
-
-    await user.save();
-
-    return res.status(200).json({
-
-      success: true,
-
-      data: plan,
-
-      message: "Long-term plan generated and saved successfully"
-    });
-
-  } catch (error) {
-
-    return res.status(500).json({
-
-      success: false,
-
-      message:
-        "Failed to generate long-term plan",
-
-      error:
-        error.message
-    });
-  }
-};
-
-export const getTodayTasks =
-async (req, res) => {
-
-  try {
-
-    const user =
-      await User.findById(
-        req.user.userId
-      );
-
-    const weakTopics =
-      user.weakTopics || [];
-
-    const incompleteTasks =
-      user.incompleteTasks || [];
-
-    const todayTask =
-      await generateTodayTask({
-
-        goal:
-          user.currentGoal,
-
-        weakTopics,
-
-        incompleteTasks,
-
-        dayNumber:
-          user.currentDay || 1,
-
-        hoursPerDay:
-          user.hoursPerDay || 2,
-
-        level:
-          user.level || "beginner"
+        message:
+          "Short-term plan generated and saved successfully"
       });
 
-    return res.status(200).json({
+    } catch (error) {
 
-      success: true,
-
-      data: todayTask
-    });
-
-  } catch (error) {
-
-    return res.status(500).json({
-
-      success: false,
-
-      message:
-        "Failed to generate today tasks",
-
-      error:
-        error.message
-    });
-  }
-};
-
-export const createLongTermPlan =
-async (req, res) => {
-
-  try {
-
-    console.log(
-      "======================"
-    );
-
-    console.log(
-      "LONG TERM API HIT"
-    );
-
-    console.log(
-      "REQ USER:"
-    );
-
-    console.log(req.user);
-
-    console.log(
-      "REQ BODY:"
-    );
-
-    console.log(req.body);
-
-    // ======================
-    // FIND USER
-    // ======================
-
-   const userId =
-  req.user.userId;
-
-const user =
-  await User.findById(
-    userId
-  );
-
-    console.log(
-      "USER FOUND:"
-    );
-
-    console.log(user);
-
-    if (!user) {
-
-      console.log(
-        "USER NOT FOUND"
-      );
-
-      return res.status(404)
-      .json({
+      return res.status(500).json({
 
         success: false,
 
         message:
-          "User not found"
+          "Failed to generate short-term plan",
+
+        error:
+          error.message
       });
     }
+  };
 
-    // ======================
-    // BODY
-    // ======================
+export const generateLongTermPlanController =
+  async (req, res) => {
 
-    const {
-      goal,
-      totalDays = 150,
-      level = "beginner"
-    } = req.body;
+    try {
 
-    console.log(
-      "GOAL:",
-      goal
-    );
-
-    console.log(
-      "TOTAL DAYS:",
-      totalDays
-    );
-
-    console.log(
-      "LEVEL:",
-      level
-    );
-
-    // ======================
-    // GENERATE ROADMAP
-    // ======================
-
-    console.log(
-      "GENERATING ROADMAP..."
-    );
-
-    const roadmap =
-      await generateLongTermPlan(
+      const {
         goal,
-        totalDays,
+        days,
+        level
+      } = req.body;
+
+      console.log(
+        "Generating long-term plan with:",
+        { goal, days, level }
+      );
+
+      const plan =
+        await generateLongTermPlan(
+          goal,
+          days,
+          level
+        );
+
+      // Save plan to database
+      const user = await User.findById(req.user.userId);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found"
+        });
+      }
+
+      user.longTermPlans.unshift({
+        title: goal,
+        goal: goal,
+        roadmap: plan
+      });
+
+      await user.save();
+
+      return res.status(200).json({
+
+        success: true,
+
+        data: plan,
+
+        message: "Long-term plan generated and saved successfully"
+      });
+
+    } catch (error) {
+
+      return res.status(500).json({
+
+        success: false,
+
+        message:
+          "Failed to generate long-term plan",
+
+        error:
+          error.message
+      });
+    }
+  };
+
+export const getTodayTasks =
+  async (req, res) => {
+
+    try {
+
+      const user =
+        await User.findById(
+          req.user.userId
+        );
+
+      const weakTopics =
+        user.weakTopics || [];
+
+      const incompleteTasks =
+        user.incompleteTasks || [];
+
+      const todayTask =
+        await generateTodayTask({
+
+          goal:
+            user.currentGoal,
+
+          weakTopics,
+
+          incompleteTasks,
+
+          dayNumber:
+            user.currentDay || 1,
+
+          hoursPerDay:
+            user.hoursPerDay || 2,
+
+          level:
+            user.level || "beginner"
+        });
+
+      return res.status(200).json({
+
+        success: true,
+
+        data: todayTask
+      });
+
+    } catch (error) {
+
+      return res.status(500).json({
+
+        success: false,
+
+        message:
+          "Failed to generate today tasks",
+
+        error:
+          error.message
+      });
+    }
+  };
+
+export const createLongTermPlan =
+  async (req, res) => {
+
+    try {
+
+      console.log(
+        "======================"
+      );
+
+      console.log(
+        "LONG TERM API HIT"
+      );
+
+      console.log(
+        "REQ USER:"
+      );
+
+      console.log(req.user);
+
+      console.log(
+        "REQ BODY:"
+      );
+
+      console.log(req.body);
+
+      // ======================
+      // FIND USER
+      // ======================
+
+      const userId =
+        req.user.userId;
+
+      const user =
+        await User.findById(
+          userId
+        );
+
+      console.log(
+        "USER FOUND:"
+      );
+
+      console.log(user);
+
+      if (!user) {
+
+        console.log(
+          "USER NOT FOUND"
+        );
+
+        return res.status(404)
+          .json({
+
+            success: false,
+
+            message:
+              "User not found"
+          });
+      }
+
+      // ======================
+      // BODY
+      // ======================
+
+      const {
+        goal,
+        totalDays = 150,
+        level = "beginner"
+      } = req.body;
+
+      console.log(
+        "GOAL:",
+        goal
+      );
+
+      console.log(
+        "TOTAL DAYS:",
+        totalDays
+      );
+
+      console.log(
+        "LEVEL:",
         level
       );
 
-    console.log(
-      "ROADMAP GENERATED"
-    );
+      // ======================
+      // GENERATE ROADMAP
+      // ======================
 
-    console.log(roadmap);
+      console.log(
+        "GENERATING ROADMAP..."
+      );
 
-    // ======================
-    // PUSH PLAN
-    // ======================
+      const roadmap =
+        await generateLongTermPlan(
+          goal,
+          totalDays,
+          level
+        );
 
-    console.log(
-      "OLD PLAN COUNT:"
-    );
+      console.log(
+        "ROADMAP GENERATED"
+      );
 
-    console.log(
-      user.longTermPlans
-        ?.length
-    );
+      console.log(roadmap);
 
-    user.longTermPlans.push({
+      // ======================
+      // PUSH PLAN
+      // ======================
 
-      title:
-        roadmap.title,
+      console.log(
+        "OLD PLAN COUNT:"
+      );
 
-      goal:
-        roadmap.goal,
+      console.log(
+        user.longTermPlans
+          ?.length
+      );
 
-      roadmap,
+      user.longTermPlans.push({
 
-      createdAt:
-        new Date()
-    });
+        title:
+          roadmap.title,
 
-    console.log(
-      "PLAN PUSHED"
-    );
+        goal:
+          roadmap.goal,
 
-    console.log(
-      "NEW PLAN COUNT:"
-    );
+        roadmap,
 
-    console.log(
-      user.longTermPlans
-        ?.length
-    );
+        createdAt:
+          new Date()
+      });
 
-    // ======================
-    // MARK MODIFIED
-    // ======================
+      console.log(
+        "PLAN PUSHED"
+      );
 
-    user.markModified(
-      "longTermPlans"
-    );
+      console.log(
+        "NEW PLAN COUNT:"
+      );
 
-    console.log(
-      "MARK MODIFIED DONE"
-    );
+      console.log(
+        user.longTermPlans
+          ?.length
+      );
 
-    // ======================
-    // SAVE USER
-    // ======================
+      // ======================
+      // MARK MODIFIED
+      // ======================
 
-    console.log(
-      "SAVING USER..."
-    );
+      user.markModified(
+        "longTermPlans"
+      );
 
-    
+      console.log(
+        "MARK MODIFIED DONE"
+      );
 
-    const savedUser =
-      await user.save();
+      // ======================
+      // SAVE USER
+      // ======================
 
-    console.log(
-      "USER SAVED"
-    );
+      console.log(
+        "SAVING USER..."
+      );
 
-    console.log(
-      savedUser
-        .longTermPlans
-        ?.length
-    );
 
-    console.log(
-      "======================"
-    );
 
-    // ======================
-    // RESPONSE
-    // ======================
+      const savedUser =
+        await user.save();
 
-    return res.status(201)
-    .json({
+      console.log(
+        "USER SAVED"
+      );
 
-      success: true,
+      console.log(
+        savedUser
+          .longTermPlans
+          ?.length
+      );
 
-      message:
-        "Long-term roadmap created successfully",
+      console.log(
+        "======================"
+      );
 
-      data: roadmap
-    });
+      // ======================
+      // RESPONSE
+      // ======================
 
-  } catch (error) {
+      return res.status(201)
+        .json({
 
-    console.log(
-      "======================"
-    );
+          success: true,
 
-    console.log(
-      "LONG TERM ERROR"
-    );
+          message:
+            "Long-term roadmap created successfully",
 
-    console.log(error);
+          data: roadmap
+        });
 
-    console.log(
-      error.message
-    );
+    } catch (error) {
 
-    console.log(
-      "======================"
-    );
+      console.log(
+        "======================"
+      );
 
-    return res.status(500)
-    .json({
+      console.log(
+        "LONG TERM ERROR"
+      );
 
-      success: false,
+      console.log(error);
 
-      message:
-        "Failed to create roadmap",
-
-      error:
+      console.log(
         error.message
-    });
-  }
-};
+      );
+
+      console.log(
+        "======================"
+      );
+
+      return res.status(500)
+        .json({
+
+          success: false,
+
+          message:
+            "Failed to create roadmap",
+
+          error:
+            error.message
+        });
+    }
+  };

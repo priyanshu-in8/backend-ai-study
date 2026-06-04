@@ -37,6 +37,10 @@ import {
 
   getTodayPlan,
 
+  completeActivity,
+
+  getSavedTodayPlan,
+
   runCodeDirectly,
 
   generateShortTermPlanController,
@@ -45,7 +49,9 @@ import {
   
   getTodayTasks,
   
-  createLongTermPlan
+  createLongTermPlan,
+
+  generateStudyPlan
 
 } from "../controllers/aiController.js";
 
@@ -108,8 +114,22 @@ router.get(
 router.get(
   "/today-plan",
   authenticate,
-  aiLimiter,
+  
   getTodayPlan
+);
+
+router.get(
+  "/saved-today-plan",
+  authenticate,
+  aiLimiter,
+  getSavedTodayPlan
+);
+
+router.post(
+  "/complete-activity",
+  authenticate,
+  aiLimiter,
+  completeActivity
 );
 
 router.patch(

@@ -253,6 +253,49 @@ longTermPlans: [
 ],
 
 // =====================
+// DAILY PLANS
+// =====================
+
+dailyPlan: {
+  date: String,
+  day: Number,
+  focusArea: String,
+  level: String,
+  hoursPerDay: Number,
+  shortTermTopic: String,
+  longTermTopic: String,
+  weakTopics: [String],
+  activities: [
+    {
+      id: String,
+      type: {
+        type: String,
+        enum: ["quiz", "coding", "flashcard", "revision", "focus", "notes"]
+      },
+      title: String,
+      description: String,
+      completed: {
+        type: Boolean,
+        default: false
+      },
+      duration: String,
+      xp: Number,
+      difficulty: String
+    }
+  ],
+  totalXP: Number,
+  estimatedDuration: Number,
+  completedActivities: {
+    type: Number,
+    default: 0
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+},
+
+// =====================
 // DAILY MISSIONS
 // =====================
 

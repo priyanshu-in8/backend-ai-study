@@ -4,6 +4,7 @@ import codeExecutor
 from "../utils/codeExecutor.js";
 
 
+
 dotenv.config();
 
 const client = new OpenAI({
@@ -1698,74 +1699,94 @@ RETURN FORMAT:
   }
 };
 
-export const generateDayPlan = async ({
-  todayTopic,
-  day = 1,
-  hoursPerDay = 2,
-  level = "beginner",
-  weakTopics = [],
-  incompleteTasks = []
-}) => {
 
-  try {
 
-    const weakTopicText =
-      weakTopics.length > 0
-        ? weakTopics.join(", ")
-        : "None";
+export const generateTodayAIPlan =
+  async ({
 
-    const incompleteText =
-      incompleteTasks.length > 0
-        ? incompleteTasks
-            .map(task => task.title)
-            .join(", ")
-        : "None";
+    shortTermTopic,
 
-    const prompt = `
-You are an AI daily study planner.
+    longTermTopic,
 
-Generate ONLY one day's study plan.
+    weakTopic,
 
-Today's Topic:
-${todayTopic}
+    currentDay,
 
-Day:
-${day}
+    level,
 
-Level:
+    shortGoal,
+
+    hoursPerDay,
+
+    incompleteTasks,
+
+  }) => {
+
+    try {
+
+      const prompt = `
+You are an intelligent Adaptive AI Study Planner.
+
+Analyze the student's learning progress and generate ONLY today's study plan.
+
+Student Details:
+
+Current Day:
+${currentDay}
+
+Education Level:
 ${level}
 
-Study Time:
-${hoursPerDay} hours
+Short Term Goal:
+${shortGoal}
 
-Weak Topics:
-${weakTopicText}
+Short Term Topic:
+${shortTermTopic}
+
+Long Term Topic:
+${longTermTopic}
+
+Weak Topic:
+${weakTopic}
+
+Study Hours Per Day:
+${hoursPerDay}
 
 Incomplete Tasks:
-${incompleteText}
+${incompleteTasks}
 
-IMPORTANT:
+Instructions:
+
 - Return ONLY valid JSON
 - No markdown
 - No explanations
-- EXACTLY 5 activities
-- Keep response compact
-- Focus on weak topics
-- Include incomplete task recovery
+- No extra text
+- Generate ONLY today's study plan
+- Exactly 5 activities
+- Activities must be practical and realistic
+- Prioritize weak topics
+- Include revision activity
+- Include quiz activity
+- Include coding/problem solving activity
+- Keep activity titles short
+- Avoid duplicate activities
+- Balance short term and long term goals
+- Activities should match the student's level
+- completed must always be false
 
 Allowed activity types:
 - coding
-- quiz
-- flashcard
-- notes
 - revision
+- quiz
+- notes
+- flashcard
 - focus
 
 Return format:
 
 {
-  "day": ${day},
-  "todayTopic": "${todayTopic}",
+  "day": ${currentDay},
+  "focusArea": "",
   "activities": [
     {
       "id": "1",
@@ -1775,13 +1796,13 @@ Return format:
     },
     {
       "id": "2",
-      "type": "quiz",
+      "type": "revision",
       "title": "",
       "completed": false
     },
     {
       "id": "3",
-      "type": "flashcard",
+      "type": "quiz",
       "title": "",
       "completed": false
     },
@@ -1793,7 +1814,7 @@ Return format:
     },
     {
       "id": "5",
-      "type": "revision",
+      "type": "flashcard",
       "title": "",
       "completed": false
     }
@@ -1801,64 +1822,70 @@ Return format:
 }
 `;
 
-    const response =
-      await generateResponse([
-        {
-          role: "user",
-          content: prompt,
-        },
-      ]);
+      const response =
+        await generateResponse([
+          {
+            role: "user",
+            content: prompt,
+          },
+        ]);
 
-    console.log("RAW RESPONSE:");
-    console.log(response);
-
-    let cleaned = response
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .replace(/,\s*([}\]])/g, "$1")
-      .trim();
-
-    const start =
-      cleaned.indexOf("{");
-
-    const end =
-      cleaned.lastIndexOf("}");
-
-    if (
-      start === -1 ||
-      end === -1
-    ) {
-
-      throw new Error(
-        "Invalid JSON response"
+      console.log(
+        "RAW RESPONSE:"
       );
+
+      console.log(response);
+
+      let cleaned =
+        response
+          .replace(
+            /```json/gi,
+            ""
+          )
+          .replace(
+            /```/g,
+            ""
+          )
+          .trim();
+
+      const start =
+        cleaned.indexOf("{");
+
+      const end =
+        cleaned.lastIndexOf("}");
+
+      cleaned =
+        cleaned.slice(
+          start,
+          end + 1
+        );
+
+      const parsed =
+        JSON.parse(cleaned);
+
+      return {
+
+        success: true,
+
+        data: parsed,
+      };
+
+    } catch (error) {
+
+      console.error(
+        "TODAY AI ERROR:",
+        error
+      );
+
+      return {
+
+        success: false,
+
+        message:
+          error.message,
+      };
     }
+  };
 
-    cleaned =
-      cleaned.slice(
-        start,
-        end + 1
-      );
 
-    cleaned = cleaned
-      .replace(/\n/g, "")
-      .replace(/\r/g, "")
-      .trim();
 
-    console.log("CLEANED JSON:");
-    console.log(cleaned);
-
-    return JSON.parse(cleaned);
-
-  } catch (error) {
-
-    console.error(
-      "Day plan error:",
-      error.message
-    );
-
-    throw new Error(
-      "Failed to generate day plan"
-    );
-  }
-};
