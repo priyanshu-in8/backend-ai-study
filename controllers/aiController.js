@@ -457,8 +457,10 @@ export const getTodayPlan = async (req, res) => {
     }
 
     // Get latest plans
-    const shortTermPlan = user.studyPlans[0];
+    const shortTermPlan = user.studyPlans?.[0];
     const longTermPlan = user.longTermPlans?.[0];
+
+   
 
     // Calculate current day
     const createdAt = new Date(shortTermPlan.createdAt || Date.now());
@@ -466,16 +468,27 @@ export const getTodayPlan = async (req, res) => {
     const daysDiff = Math.floor((today - createdAt) / (1000 * 60 * 60 * 24));
     const currentDay = daysDiff + 1;
 
+  const month =
+  Math.floor(currentDay / 30);
+
+const week =
+  Math.floor(currentDay / 30 / 7);
+
+const finalDays =
+  Math.floor(currentDay / 30 % 7)
+    
+
     // Extract topics from plans
     let shortTermTopic = "General";
     let longTermTopic = "General";
 
-    if (shortTermPlan.roadmap?.months?.[0]?.weeks?.[0]?.days?.[0]) {
-      shortTermTopic = shortTermPlan.roadmap.months[0].weeks[0].days[0].topic;
+    if (shortTermPlan.topics?.[currentDay].topic) {
+      shortTermTopic = shortTermPlan.topics?.[0].topic;
     }
-
-    if (longTermPlan?.roadmap?.months?.[0]?.weeks?.[0]?.days?.[0]) {
-      longTermTopic = longTermPlan.roadmap.months[0].weeks[0].days[0].topic;
+console.log("done ",  shortTermTopic
+)
+    if (longTermPlan?.roadmap?.months?.[month]?.weeks?.[week]?.days?.[finalDays]) {
+      longTermTopic = longTermPlan.roadmap.months[month].weeks[week].days[finalDays].topic;
     }
 
     // Get weak topics
@@ -614,104 +627,83 @@ export const getTodayPlan = async (req, res) => {
  * Complete an activity in today's plan
  * When all activities are completed, regenerate a new daily plan
  */
-export const completeActivity = async (req, res) => {
-  try {
-    const { activityId } = req.body;
+export const completeActivity =
+  async (req, res) => {
 
-    if (!activityId) {
-      return res.status(400).json({
-        success: false,
-        message: "Activity ID is required"
-      });
-    }
+    try {
 
-    const user = await User.findById(req.user.userId);
+      const {
+        id: activityId
+      } = req.params;
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
-    }
-
-    if (!user.dailyPlan) {
-      return res.status(404).json({
-        success: false,
-        message: "No daily plan found"
-      });
-    }
-
-    // Find and complete the activity
-    const activity = user.dailyPlan.activities.find(
-      a => a.id === String(activityId)
-    );
-
-    if (!activity) {
-      return res.status(404).json({
-        success: false,
-        message: "Activity not found"
-      });
-    }
-
-    if (activity.completed) {
-      return res.status(400).json({
-        success: false,
-        message: "Activity already completed"
-      });
-    }
-
-    // Mark activity as completed
-    activity.completed = true;
-    user.dailyPlan.completedActivities =
-      (user.dailyPlan.completedActivities || 0) + 1;
-
-    // Award XP
-    user.xpPoints = (user.xpPoints || 0) + (activity.xp || 0);
-
-    // Check if all activities are completed
-    const allCompleted = user.dailyPlan.activities.every(a => a.completed);
-
-    await user.save();
-
-    const response = {
-      success: true,
-      message: "Activity completed successfully",
-      data: {
-        activityId,
-        activity,
-        completedActivities: user.dailyPlan.completedActivities,
-        totalActivities: user.dailyPlan.activities.length,
-        xpEarned: activity.xp || 0,
-        totalXP: user.xpPoints,
-        allCompleted
-      }
-    };
-
-    // If all activities completed, regenerate new daily plan
-    if (allCompleted) {
-      response.message =
-        "All activities completed! New plan will be generated.";
-
-      // Trigger plan regeneration
-      setTimeout(() => {
-        // This will be handled by the next getTodayPlan call
-        console.log(
-          `Auto-regenerating daily plan for user ${req.user.userId}`
+      const user =
+        await User.findById(
+          req.user.userId
         );
-      }, 1000);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found"
+        });
+      }
+
+      if (!user.dailyPlan) {
+        return res.status(404).json({
+          success: false,
+          message: "No daily plan found"
+        });
+      }
+
+      const activity =
+        user.dailyPlan.activities.find(
+          a =>
+            a._id.toString() ===
+            activityId
+        );
+
+      if (!activity) {
+        return res.status(404).json({
+          success: false,
+          message: "Activity not found"
+        });
+      }
+
+      if (activity.completed) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Activity already completed"
+        });
+      }
+
+      activity.completed = true;
+
+      user.dailyPlan.completedActivities += 1;
+
+      user.xpPoints +=
+        activity.xp || 0;
+
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Activity completed successfully",
+        activity,
+      });
+
+    } catch (error) {
+
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to complete activity",
+      });
     }
-
-    return res.status(200).json(response);
-
-  } catch (error) {
-    console.error("Error completing activity:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to complete activity",
-      error: error.message
-    });
-  }
-};
+  };
 
 /**
  * Get today's saved daily plan
@@ -1060,7 +1052,7 @@ export const chat = async (req, res) => {
  */
 export const generateQuizEndpoint = async (req, res) => {
   try {
-    const { topic, numQuestions = 5 } = req.body;
+    const { topic, numQuestions = 25 } = req.body;
 
     const quiz = await generateQuiz(topic, numQuestions);
 

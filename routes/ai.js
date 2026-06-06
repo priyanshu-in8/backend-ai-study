@@ -133,10 +133,10 @@ router.post(
 );
 
 router.patch(
-  "/study-plan/:planId/:dayNumber",
+  "/missions/:id",
   authenticate,
   aiLimiter,
-  completeStudyDay
+  completeActivity
 );
 
 

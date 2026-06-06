@@ -49,17 +49,46 @@ export const generateChatResponse = async (prompt) => {
 //
 // ✅ 2. Quiz
 //
-export const generateQuiz = async (topic, numQuestions = 5) => {
-  try {
-    const prompt = `
-Generate ${numQuestions} MCQ questions on "${topic}".
+export const generateQuiz = async (
+  topic,
+  numQuestions = 25
+) => {
 
-Return ONLY JSON:
+  try {
+
+    const chunkSize = 5;
+
+    let allQuestions = [];
+
+    let currentId = 1;
+
+    for (
+      let i = 0;
+      i < numQuestions;
+      i += chunkSize
+    ) {
+
+      const remaining =
+        numQuestions - i;
+
+      const batchCount =
+        remaining >= chunkSize
+          ? chunkSize
+          : remaining;
+
+      const prompt = `
+Generate ${batchCount} MCQ questions on "${topic}".
+
+Return ONLY valid JSON.
+
+Format:
 {
-  "topic": "${topic}",
   "questions": [
     {
       "id": 1,
+      "topic": "${topic}",
+      "subTopic": "Specific concept",
+      "difficulty": "easy",
       "question": "Question?",
       "options": ["A","B","C","D"],
       "correctAnswer": 0,
@@ -67,25 +96,141 @@ Return ONLY JSON:
     }
   ]
 }
+
+Rules:
+- Strict JSON only
+- No markdown
+- No extra text
+- Each question must have exactly 4 options
+- correctAnswer must be option index (0-3)
+- difficulty must be:
+  easy / medium / hard
 `;
 
-    const text = await generateResponse([
-      { role: "user", content: prompt }
-    ]);
+      const text =
+        await generateResponse([
+          {
+            role: "user",
+            content: prompt,
+          },
+        ]);
 
-   let cleaned = text
-  .replace(/```json/g, "")
-  .replace(/```/g, "")
-  .trim();
+      console.log(
+        "RAW QUIZ RESPONSE:"
+      );
 
-const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON found");
+      console.log(text);
 
-    return JSON.parse(jsonMatch[0]);
+      let cleaned = text
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const jsonMatch =
+        cleaned.match(/\{[\s\S]*\}/);
+
+      if (!jsonMatch) {
+
+        console.log(
+          "No valid JSON found"
+        );
+
+        continue;
+      }
+
+      let parsed;
+
+      try {
+
+        parsed = JSON.parse(
+          jsonMatch[0]
+        );
+
+      } catch (err) {
+
+        console.log(
+          "JSON Parse Error:",
+          err.message
+        );
+
+        continue;
+      }
+
+      if (
+        parsed.questions &&
+        Array.isArray(
+          parsed.questions
+        )
+      ) {
+
+        const updatedQuestions =
+          parsed.questions.map(
+            (q) => ({
+              id: currentId++,
+
+              topic:
+                q.topic || topic,
+
+              subTopic:
+                q.subTopic ||
+                "General",
+
+              difficulty:
+                q.difficulty ||
+                "easy",
+
+              question:
+                q.question || "",
+
+              options:
+                Array.isArray(
+                  q.options
+                ) &&
+                q.options.length === 4
+                  ? q.options
+                  : [
+                      "Option A",
+                      "Option B",
+                      "Option C",
+                      "Option D",
+                    ],
+
+              correctAnswer:
+                typeof q.correctAnswer ===
+                "number"
+                  ? q.correctAnswer
+                  : 0,
+
+              explanation:
+                q.explanation ||
+                "No explanation",
+            })
+          );
+
+        allQuestions.push(
+          ...updatedQuestions
+        );
+      }
+    }
+
+    return {
+      success: true,
+      topic,
+      totalQuestions:
+        allQuestions.length,
+      questions: allQuestions,
+    };
 
   } catch (error) {
-    console.error("Quiz error:", error.message);
-    throw new Error("Failed to generate quiz");
+
+    console.error(
+      "Quiz error:",
+      error.message
+    );
+
+    throw new Error(
+      "Failed to generate quiz"
+    );
   }
 };
 
@@ -1724,103 +1869,85 @@ export const generateTodayAIPlan =
 
     try {
 
-      const prompt = `
-You are an intelligent Adaptive AI Study Planner.
 
-Analyze the student's learning progress and generate ONLY today's study plan.
+const prompt = `
+You are an advanced Adaptive AI Study Planner.
 
-Student Details:
+Your task is to generate a highly personalized study plan for ONLY TODAY.
 
-Current Day:
-${currentDay}
+Student Profile:
 
-Education Level:
-${level}
+- Current Study Day: ${currentDay}
+- Education Level: ${level}
+- Daily Study Hours: ${hoursPerDay}
 
-Short Term Goal:
-${shortGoal}
+Learning Goals:
 
-Short Term Topic:
-${shortTermTopic}
+- Short-Term Goal: ${shortGoal}
+- Short-Term Topic: ${shortTermTopic}
+- Long-Term Topic: ${longTermTopic}
 
-Long Term Topic:
-${longTermTopic}
+Performance Analysis:
 
-Weak Topic:
-${weakTopic}
+- Weak Topics: ${JSON.stringify(weakTopic)}
+- Incomplete Tasks: ${JSON.stringify(incompleteTasks)}
 
-Study Hours Per Day:
-${hoursPerDay}
+Rules:
 
-Incomplete Tasks:
-${incompleteTasks}
-
-Instructions:
-
-- Return ONLY valid JSON
-- No markdown
-- No explanations
-- No extra text
-- Generate ONLY today's study plan
-- Exactly 5 activities
-- Activities must be practical and realistic
-- Prioritize weak topics
-- Include revision activity
-- Include quiz activity
-- Include coding/problem solving activity
-- Keep activity titles short
-- Avoid duplicate activities
-- Balance short term and long term goals
-- Activities should match the student's level
-- completed must always be false
+1. Return ONLY valid JSON.
+2. No markdown.
+3. No explanations.
+4. Generate EXACTLY 5 activities.
+5. Activities must be personalized.
+6. Prioritize weak areas.
+7. Avoid generic titles like "General Quiz".
+8. Keep titles practical and specific.
+9. Match difficulty with student's level.
+10. Include a balanced mix of:
+   - problem solving
+   - revision
+   - quiz
+   - active recall
+   - deep focus
+11. Activities should feel like a real mentor designed them.
+12. completed must always be false.
+13. Each activity should have:
+   - realistic duration
+   - xp
+   - difficulty
+   - clear topic focus
 
 Allowed activity types:
 - coding
 - revision
 - quiz
 - notes
-- flashcard
+- flashcards
 - focus
 
-Return format:
+JSON FORMAT:
 
 {
   "day": ${currentDay},
   "focusArea": "",
+  "estimatedDuration": 0,
   "activities": [
     {
       "id": "1",
       "type": "coding",
+      "topic": "",
       "title": "",
-      "completed": false
-    },
-    {
-      "id": "2",
-      "type": "revision",
-      "title": "",
-      "completed": false
-    },
-    {
-      "id": "3",
-      "type": "quiz",
-      "title": "",
-      "completed": false
-    },
-    {
-      "id": "4",
-      "type": "notes",
-      "title": "",
-      "completed": false
-    },
-    {
-      "id": "5",
-      "type": "flashcard",
-      "title": "",
+      "description": "",
+      "difficulty": "easy",
+      "duration": "30 mins",
+      "xp": 100,
       "completed": false
     }
   ]
 }
 `;
+
+
 
       const response =
         await generateResponse([
